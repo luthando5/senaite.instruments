@@ -21,19 +21,6 @@
     <legend class="col-form-label-lg">Advanced options</legend>
 
     <div class="form-group">
-        <label for="worksheet">Worksheet name</label>
-
-        <input type="text"
-               class="form-control"
-               id="worksheet"
-               name="worksheet"
-               value="Concentrations"/>
-        <small class="form-text text-muted">
-            You can also enter a sheet index, starting from 0.
-        </small>
-    </div>
-
-    <div class="form-group">
         <label for="default_unit">Default result unit</label>
         <select name="default_unit" class="form-control" id="default_unit">
             <option value="pct">Percentage</option>
