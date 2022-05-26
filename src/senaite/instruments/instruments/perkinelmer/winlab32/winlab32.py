@@ -101,10 +101,11 @@ class Winlab32(InstrumentResultsFileParser):
     def parse_row(self, row_nr, row):
         # convert row to use interim field names
         try:
-            value = float(row['Reported Conc (Calib)'])
+            value = float(row['Conc (Samp)'])
         except (TypeError, ValueError):
-            value = row['Reported Conc (Calib)']
+            value = row['Conc (Samp)']
         parsed = {'reading': value, 'DefaultResult': 'reading'}
+        parsed.update(row)
 
         sample_id = subn(r'[^\w\d\-_]*', '', row.get('Sample ID', ""))[0]
         kw = subn(r"[^\w\d]*", "", row.get('Analyte Name', ""))[0]
