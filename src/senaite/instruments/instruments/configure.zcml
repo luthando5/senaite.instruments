@@ -8,6 +8,12 @@
     factory=".agilent.chemstation.chemstation.chemstationimport"
     provides="senaite.core.exportimport.instruments.IInstrumentImportInterface"/>
 
+   <adapter
+    for="*"
+    name="flameatomic_importer"
+    factory=".agilent.flameatomic.flameatomic.flameatomicimport"
+    provides="senaite.core.exportimport.instruments.IInstrumentImportInterface"/>
+
 <!-- Incomplete ...
    <adapter
     for="*"
