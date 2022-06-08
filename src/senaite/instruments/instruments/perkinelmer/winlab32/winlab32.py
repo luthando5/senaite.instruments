@@ -115,9 +115,6 @@ class Winlab32(InstrumentResultsFileParser):
             return 0
 
         try:
-            ar = self.get_ar(sample_id)
-            brain = self.get_analysis(ar, kw)
-            new_kw = brain.getKeyword
             if self.is_sample(sample_id):
                 ar = self.get_ar(sample_id)
                 brain = self.get_analysis(ar, kw)
