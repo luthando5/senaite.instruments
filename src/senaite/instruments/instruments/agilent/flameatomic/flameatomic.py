@@ -43,6 +43,7 @@ from senaite.core.exportimport.instruments.resultsimport import (
 from bika.lims import api
 from bika.lims import bikaMessageFactory as _
 from bika.lims.catalog import CATALOG_ANALYSIS_REQUEST_LISTING
+from senaite.core.catalog import ANALYSIS_CATALOG
 from senaite.instruments.instrument import FileStub
 from senaite.instruments.instrument import SheetNotFound
 from zope.interface import implements
@@ -216,14 +217,28 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         lines = self.csv_data.readlines()
         #  POSSIBKY ITERATE THROUGH LINES INSTEAD OF READER
         # reader = csv.DictReader(lines)
-        sample_service = 'Gold'#lines[4][1]
+        # sample_service = 'Gold'#lines[4][1]
         round = 0
+        sample_service = []
         # split_row = lines.split(";")
         for row_nr, row in enumerate(lines):
             # import pdb; pdb.set_trace()
+            # import pdb;pdb.set_trace()
             if 'M\xc3\xa9thode: Au Aqua Regia Echelle' in row.split(",")[0]:
                 round = round + 1
-            self.parse_row(row_nr, row.split(","),sample_service,round)
+            if 'M\xc3\xa9thodes' in row.split(",")[0]: #Will there be other sample services on the same worksheet?
+                if row.split(",")[1]:
+                    sample_service.append(row.split(",")[1])
+                if row.split(",")[2]:
+                    sample_service.append(row.split(",")[2])
+                if row.split(",")[3]:
+                    sample_service.append(row.split(",")[3])
+                # if row.split(",")[2] == "Au":
+                #     sample_service.append('Gold')
+                # if row.split(",")[3] == "Au":
+                #     sample_service.append('Gold')
+            if row_nr > 5 and row.split(",")[0] and row.split(",")[1]:
+                self.parse_row(row_nr, row.split(","),sample_service[round-1],round)
         # import pdb; pdb.set_trace()
         return 0
     # def get_sample(row,)
@@ -231,27 +246,46 @@ class FlameAtomicParser(InstrumentResultsFileParser):
     def parse_row(self, row_nr, row,sample_service,round):#(self, ar, row_nr, row)
         # import pdb; pdb.set_trace()
         parsed = {}
-        if row[0] == 'Analyste\xc3\xa9':
-            return
+        # if row[0] == 'Analyste\xc3\xa9':
+        #     return
         # if row_nr == 4:
-        if row[0] == 'M\xc3\xa9thodes':
-            if row[1] == 'Au':
-                sample_service = 'Gold' #This is not stored for all indexes of the list.
-        if 'M\xc3\xa9thode: Au Aqua Regia Echelle' in row[0]:#Introducing a new round - no entries on this line
-            return
-        if row_nr > 5:
+        # import pdb;pdb.set_trace()
+        # if row[0] == 'M\xc3\xa9thodes':
+        #     if row[1] == 'Au':
+        #         sample_service = 'Gold' #This is not stored for all indexes of the list.
+        # if 'M\xc3\xa9thode: Au Aqua Regia Echelle' in row[0]:#Introducing a new round - no entries on this line
+        #     return
+        # if row_nr > 5 and row[0] and row[1]:
+            # if row_nr > 125:
+            #     # my_debugging = True
+            #     import pdb; pdb.set_trace()
+        if self.is_sample(row[0]):#
             sample = self.get_ar(row[0])
-            analyses = sample.getAnalyses()
-            for analysis in analyses:
-                if sample_service == analysis.Title:
-                    keyword = analysis.getKeyword
-                    if row[1] == 'Over':#Will be catered for in the next sample batch
-                        return
-                    parsed["Reading"] = row[1] #row[2] and row[3] for second and third rounds
-                    parsed["Factor"] = row[8] #Factor part of equation
-                    parsed["round"] = round #In which round these were handled
-                    parsed.update({"DefaultResult": "Reading"})
-                    self._addRawResult(sample.id, {keyword: parsed})
+        else:
+            import pdb; pdb.set_trace()
+            sample = self.get_qc_or_duplicate(row[0])
+            sample1  = self.get_qc_or_duplicate('QC-001-001')
+            sample2  = self.get_qc_or_duplicate('SA-001')
+            #sample = self.get_QC(row[0]) #To be made. Could also be a duplicate
+        analyses = sample.getAnalyses()
+        for analysis in analyses:
+            if sample_service == analysis.getKeyword:#analysis.Title:
+                keyword = analysis.getKeyword
+                if row[1] == 'OVER':#Will be catered for in the next sample batch
+                    if round == 3:
+                        parsed["Reading"] = float(999999) #row[2] and row[3] for second and third rounds
+                        parsed["Factor"] = float(row[8]) #Factor part of equation
+                        parsed["Round"] = float(round) #In which round these were handled
+                        parsed["Formula"] = "[Reading]*[Factor] = [{0}]*[{1}]".format(row[1],row[8])
+                        parsed.update({"DefaultResult": "Reading"})
+                        self._addRawResult(sample.id, {keyword: parsed})
+                    return
+                parsed["Reading"] = float(row[1]) #row[2] and row[3] for second and third rounds
+                parsed["Factor"] = float(row[8]) #Factor part of equation
+                parsed["Round"] = float(round) #In which round these were handled
+                parsed["Formula"] = "[Reading]*[Factor] = [{0}]*[{1}]".format(row[1],row[8])
+                parsed.update({"DefaultResult": "Reading"})
+                self._addRawResult(sample.id, {keyword: parsed})
 
 
 
@@ -321,6 +355,30 @@ class FlameAtomicParser(InstrumentResultsFileParser):
             return api.get_object(brains[0])
         except IndexError:
             pass
+
+    @staticmethod
+    def is_sample(sample_id):
+        query = dict(portal_type="AnalysisRequest", getId=sample_id)
+        brains = api.search(query, CATALOG_ANALYSIS_REQUEST_LISTING)
+        return True if brains else False
+
+    @staticmethod
+    def get_qc_or_duplicate(sample_id):
+        query = dict(portal_type=["ReferenceAnalysis","DuplicateAnalysis"], getId=sample_id)
+        brains = api.search(query, "senaite_catalog")
+        try:
+            return api.get_object(brains[0])
+        except IndexError:
+            pass
+    
+    # @staticmethod
+    # def get_duplicate(sample_id): #to be made
+    #     query = dict(portal_type="DuplicateAnalysis", getId=sample_id)
+    #     brains = api.search(query, ANALYSIS_CATALOG)
+    #     try:
+    #         return api.get_object(brains[0])
+    #     except IndexError:
+    #         pass
 
     @staticmethod
     def get_analyses(ar):
