@@ -35,6 +35,7 @@ from senaite.core.exportimport.instruments.resultsimport import \
 from bika.lims import api
 from bika.lims import bikaMessageFactory as _
 from bika.lims.catalog import CATALOG_ANALYSIS_REQUEST_LISTING
+from senaite.core.catalog import ANALYSIS_CATALOG
 from senaite.instruments.instrument import FileStub
 from senaite.instruments.instrument import SheetNotFound
 from senaite.instruments.instrument import xls_to_csv
@@ -182,7 +183,6 @@ class Winlab32(InstrumentResultsFileParser):
             msg = ("Multiple brains found matching Keyword '${kw}'",)
             raise MultipleAnalysesFound(msg, kw=kw)
         return brains[0]
-
 
 
 class importer(object):
