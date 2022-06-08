@@ -117,6 +117,14 @@ class Winlab32(InstrumentResultsFileParser):
             ar = self.get_ar(sample_id)
             brain = self.get_analysis(ar, kw)
             new_kw = brain.getKeyword
+            if self.is_sample(sample_id):
+                ar = self.get_ar(sample_id)
+                brain = self.get_analysis(ar, kw)
+                new_kw = brain.getKeyword
+            else:
+                analysis = self.get_duplicate_or_qc(sample_id, kw)
+                new_kw = analysis.getKeyword
+
         except Exception as e:
             self.warn(msg="Error getting analysis for '${s}/${kw}': ${e}",
                       mapping={'s': sample_id, 'kw': kw, 'e': repr(e)},
@@ -151,6 +159,30 @@ class Winlab32(InstrumentResultsFileParser):
             msg = "Multiple brains found matching Keyword '${kw}'",
             raise MultipleAnalysesFound(msg, kw=kw)
         return brains[0]
+
+    @staticmethod
+    def is_sample(sample_id):
+        query = dict(portal_type="AnalysisRequest", getId=sample_id)
+        brains = api.search(query, CATALOG_ANALYSIS_REQUEST_LISTING)
+        return True if brains else False
+
+    @staticmethod
+    def get_duplicate_or_qc(analysis_id, kw):
+        portal_types = ["DuplicateAnalysis", "ReferenceAnalysis"]
+        query = dict(
+            portal_type=portal_types, getReferenceAnalysesGroupID=analysis_id
+        )
+        brains = api.search(query, ANALYSIS_CATALOG)
+        analyses = dict((a.getKeyword, a) for a in brains)
+        brains = [v for k, v in analyses.items() if k.startswith(kw)]
+        if len(brains) < 1:
+            msg = ("No analysis found matching Keyword '${kw}'",)
+            raise AnalysisNotFound(msg, kw=kw)
+        if len(brains) > 1:
+            msg = ("Multiple brains found matching Keyword '${kw}'",)
+            raise MultipleAnalysesFound(msg, kw=kw)
+        return brains[0]
+
 
 
 class importer(object):
