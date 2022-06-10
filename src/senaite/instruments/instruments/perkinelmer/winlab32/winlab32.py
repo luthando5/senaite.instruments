@@ -105,7 +105,9 @@ class Winlab32(InstrumentResultsFileParser):
             value = float(row['Conc (Samp)'])
         except (TypeError, ValueError):
             value = row['Conc (Samp)']
-        parsed = {'reading': value, 'DefaultResult': 'reading'}
+        # reading and Reading - found out users can have Reading or reading
+        # when entering interim fields so we cater for both cases
+        parsed = {'Reading': value, 'DefaultResult': 'Reading', 'reading': value}
         parsed.update(row)
 
         sample_id = subn(r'[^\w\d\-_]*', '', row.get('Sample ID', ""))[0]
