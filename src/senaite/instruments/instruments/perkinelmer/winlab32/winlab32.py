@@ -120,18 +120,20 @@ class Winlab32(InstrumentResultsFileParser):
             if self.is_sample(sample_id):
                 ar = self.get_ar(sample_id)
                 analysis = self.get_analysis(ar, kw)
+                new_kw = analysis.getKeyword
             elif self.is_analysis_group_id(sample_id):
                 analysis = self.get_duplicate_or_qc_analysis(sample_id, kw)
+                new_kw = analysis.getKeyword
             else:
                 sample_reference = self.get_reference_sample(sample_id, kw)
                 analysis = self.get_reference_sample_analysis(sample_reference, kw)
+                new_kw = analysis.getKeyword()
         except Exception as e:
             self.warn(msg="Error getting analysis for '${s}/${kw}': ${e}",
                       mapping={'s': sample_id, 'kw': kw, 'e': repr(e)},
                       numline=row_nr, line=str(row))
             return
 
-        new_kw = analysis.getKeyword
         self._addRawResult(sample_id, {new_kw: parsed})
         return 0
 
