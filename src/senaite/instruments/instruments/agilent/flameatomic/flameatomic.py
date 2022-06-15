@@ -17,6 +17,7 @@
 #
 # Copyright 2018-2019 by it's authors.
 # Some rights reserved, see README and LICENSE.
+
 import csv
 import json
 import types
@@ -25,12 +26,8 @@ from cStringIO import StringIO
 from mimetypes import guess_type
 from openpyxl import load_workbook
 from os.path import abspath
-from os.path import basename
 from os.path import splitext
-from re import subn
 from xlrd import open_workbook
-# from senaite.instruments.instrument import xls_to_csv
-# from senaite.instruments.instrument import xlsx_to_csv
 
 from senaite.core.exportimport.instruments import (
     IInstrumentAutoImportInterface, IInstrumentImportInterface
@@ -48,7 +45,7 @@ from senaite.instruments.instrument import FileStub
 from senaite.instruments.instrument import SheetNotFound
 from zope.interface import implements
 from zope.publisher.browser import FileUpload
-from Products.CMFPlone.utils import safe_unicode
+
 
 field_interim_map = {
     "Formula": "formula",
@@ -134,37 +131,29 @@ class FlameAtomicParser(InstrumentResultsFileParser):
                 raise SheetNotFound
 
         buffer = StringIO()
-        # import pdb; pdb.set_trace()
+
         for row in sheet.rows:
             line = []
             for cell in row:
                 new_val = ''
                 if cell.number_format == "0.00%":
                     new_val = '{}%'.format(cell.value * 100)
-                # if ('\x') in cell.value.encode('utf-8'):
-                #     cellval = cell.value
-                    # cell.value = cell.value.replace('u\xe9','u\e')
-                    # cell.value = cell.value.replace('u\xe9','u\e')
-                
                 cellval = new_val if new_val else cell.value
                 if (isinstance(cellval, (int, long, float))):
                     value = "" if cellval is None else str(cellval).encode("utf8")
                 else:
-                    # value = "" if cellval is None else str(cellval).encode("utf8")
                     value = "" if cellval is None else cellval.encode("utf8")
-                if "\n" in value:  # fixme multi-line cell gives only first line
+                if "\n" in value:
                     value = value.split("\n")[0]
                 line.append(value.strip())
             if not any(line):
                 continue
             buffer.write(delimiter.join(line) + "\n")
         buffer.seek(0)
-        # import pdb; pdb.set_trace()
         return buffer
 
 
     def parse(self):
-        # import pdb; pdb.set_trace()
         order = []
         ext = splitext(self.infile.filename.lower())[-1]
         if ext == ".xlsx":
@@ -185,167 +174,73 @@ class FlameAtomicParser(InstrumentResultsFileParser):
                 except SheetNotFound:
                     self.err("Sheet not found in workbook: %s" % self.worksheet)
                     return -1
-                except Exception as e:  # noqa
+                except Exception as e:
                     pass
             else:
                 self.warn("Can't parse input file as XLS, XLSX, or CSV.")
                 return -1
         stub = FileStub(file=self.csv_data, name=str(self.infile.filename))
         self.csv_data = FileUpload(stub)
-
-        # try:
-        #     #MESS AROUND HERE
-        #     import pdb; pdb.set_trace()
-        #     sample_id, ext = splitext(basename(self.infile.filename))
-        #     # maybe the filename is a sample ID, just the way it is
-        #     ar = self.get_ar(sample_id)
-        #     if not ar:
-        #         # maybe we need to chop of it's -9digit suffix
-        #         sample_id = "-".join(sample_id.split("-")[:-1])
-        #         ar = self.get_ar(sample_id)
-        #         if not ar:
-        #             # or we are out of luck
-        #             msg = "Can't find sample for " + self.infile.filename
-        #             self.warn(msg)
-        #             return -1
-        #     self.ar = ar
-        #     self.sample_id = sample_id
-        #     self.analyses = self.get_analyses(ar)
-        # except Exception as e:
-        #     self.err(repr(e))
-        #     return False
         lines = self.csv_data.readlines()
-        #  POSSIBKY ITERATE THROUGH LINES INSTEAD OF READER
-        # reader = csv.DictReader(lines)
-        # sample_service = 'Gold'#lines[4][1]
+
         round = 0
         sample_service = []
-        # split_row = lines.split(";")
         for row_nr, row in enumerate(lines):
-            # import pdb; pdb.set_trace()
-            # import pdb;pdb.set_trace()
             if 'M\xc3\xa9thode: Au Aqua Regia Echelle' in row.split(",")[0]:
                 round = round + 1
-            if 'M\xc3\xa9thodes' in row.split(",")[0]: #Will there be other sample services on the same worksheet?
+            if 'M\xc3\xa9thodes' in row.split(",")[0]: 
                 if row.split(",")[1]:
                     sample_service.append(row.split(",")[1])
                 if row.split(",")[2]:
                     sample_service.append(row.split(",")[2])
                 if row.split(",")[3]:
                     sample_service.append(row.split(",")[3])
-                # if row.split(",")[2] == "Au":
-                #     sample_service.append('Gold')
-                # if row.split(",")[3] == "Au":
-                #     sample_service.append('Gold')
             if row_nr > 5 and row.split(",")[0] and row.split(",")[1]:
                 self.parse_row(row_nr, row.split(","),sample_service[round-1],round)
-        # import pdb; pdb.set_trace()
         return 0
-    # def get_sample(row,)
 
-    def parse_row(self, row_nr, row,sample_service,round):#(self, ar, row_nr, row)
-        # import pdb; pdb.set_trace()
+
+    def parse_row(self, row_nr, row,sample_service,round):
         parsed = {}
-        # if row[0] == 'Analyste\xc3\xa9':
-        #     return
-        # if row_nr == 4:
-        # import pdb;pdb.set_trace()
-        # if row[0] == 'M\xc3\xa9thodes':
-        #     if row[1] == 'Au':
-        #         sample_service = 'Gold' #This is not stored for all indexes of the list.
-        # if 'M\xc3\xa9thode: Au Aqua Regia Echelle' in row[0]:#Introducing a new round - no entries on this line
-        #     return
-        # if row_nr > 5 and row[0] and row[1]:
-            # if row_nr > 125:
-            #     # my_debugging = True
-            #     import pdb; pdb.set_trace()
-        if self.is_sample(row[0]):#
+        if self.is_sample(row[0]):
             sample = self.get_ar(row[0])
         else:
-            import pdb; pdb.set_trace()
-            sample = self.get_qc_or_duplicate(row[0])
-            sample1  = self.get_qc_or_duplicate('QC-001-001')
-            sample2  = self.get_qc_or_duplicate('SA-001')
-            #sample = self.get_QC(row[0]) #To be made. Could also be a duplicate
-        analyses = sample.getAnalyses()
-        for analysis in analyses:
-            if sample_service == analysis.getKeyword:#analysis.Title:
-                keyword = analysis.getKeyword
-                if row[1] == 'OVER':#Will be catered for in the next sample batch
-                    if round == 3:
-                        parsed["Reading"] = float(999999) #row[2] and row[3] for second and third rounds
-                        parsed["Factor"] = float(row[8]) #Factor part of equation
-                        parsed["Round"] = float(round) #In which round these were handled
-                        parsed["Formula"] = "[Reading]*[Factor] = [{0}]*[{1}]".format(row[1],row[8])
-                        parsed.update({"DefaultResult": "Reading"})
-                        self._addRawResult(sample.id, {keyword: parsed})
-                    return
-                parsed["Reading"] = float(row[1]) #row[2] and row[3] for second and third rounds
-                parsed["Factor"] = float(row[8]) #Factor part of equation
-                parsed["Round"] = float(round) #In which round these were handled
+            sample = self.get_duplicate_or_qc(row[0],sample_service)
+
+            if sample:
+                keyword = sample.getKeyword
+                parsed["Reading"] = float(row[1])
+                parsed["Factor"] = float(row[8])
+                parsed["Round"] = float(round)
                 parsed["Formula"] = "[Reading]*[Factor] = [{0}]*[{1}]".format(row[1],row[8])
                 parsed.update({"DefaultResult": "Reading"})
-                self._addRawResult(sample.id, {keyword: parsed})
-
-
-
-            #then anlayis
-            #Then iterate
-            # do stuff
-
-        # import pdb; pdb.set_trace()
-        # convert row to use interim field names
-        #MORE LOGIC HERE
-        # import pdb; pdb.set_trace()
-        # parsed = {field_interim_map.get(k, ""): v for k, v in row.items()}
-
-        #AR TO BE FOUND FROM ROW
-        return 
-        formula = parsed.get("formula")
-        kw = subn(r'[^\w\d\-_]*', '', formula)[0]
-        try:
-            analysis = self.get_analysis(ar, kw)#"ar remove"
-            if not analysis:
+                self._addRawResult(row[0], {keyword: parsed})
                 return 0
-            keyword = analysis.getKeyword
-        except Exception as e:
-            self.warn(
-                msg="Error getting analysis for '${kw}': ${e}",
-                mapping={"kw": kw, "e": repr(e)},
-                numline=row_nr,
-                line=str(row),
-            )
-            return
-
-        # Concentration can be PPM or PCT as it likes, I'll save both.
-        concentration = parsed["concentration"]
-        try:
-            val = float(subn(r'[^.\d]', '', str(concentration))[0])
-        except (TypeError, ValueError, IndexError):
-            self.warn(
-                msg="Can't extract numerical value from `concentration`",
-                numline=row_nr,
-                line=str(row),
-            )
-            parsed["reading"] = ""
-            return 0
-        else:
-            if "ppm" in concentration.lower():
-                parsed["reading"] = val * 0.0001
-            elif "%" in concentration:
-                parsed["reading"] = val
             else:
-                self.warn(
-                    "Can't decide if reading units are PPM or %",
-                    numline=row_nr,
-                    line=str(row),
-                )
                 return 0
 
-        parsed.update({"DefaultResult": "reading"})
+        analyses = sample.getAnalyses()
+        for analysis in analyses:
+            if sample_service == analysis.getKeyword:
+                keyword = analysis.getKeyword
+                if row[1] == 'OVER':
+                    if round == 3:
+                        parsed["Reading"] = float(999999)
+                        parsed["Factor"] = float(row[8])
+                        parsed["Round"] = float(round)
+                        parsed["Formula"] = "[Reading]*[Factor] = [{0}]*[{1}]".format(row[1],row[8])
+                        parsed.update({"DefaultResult": "Reading"})
+                        self._addRawResult(row[0], {keyword: parsed})
 
-        self._addRawResult(self.sample_id, {keyword: parsed})
-        return 0
+                    return
+                parsed["Reading"] = float(row[1])
+                parsed["Factor"] = float(row[8])
+                parsed["Round"] = float(round)
+                parsed["Formula"] = "[Reading]*[Factor] = [{0}]*[{1}]".format(row[1],row[8])
+                parsed.update({"DefaultResult": "Reading"})
+                self._addRawResult(row[0], {keyword: parsed})
+        return 
+
 
     @staticmethod
     def get_ar(sample_id):
@@ -355,30 +250,33 @@ class FlameAtomicParser(InstrumentResultsFileParser):
             return api.get_object(brains[0])
         except IndexError:
             pass
-
+    
     @staticmethod
     def is_sample(sample_id):
         query = dict(portal_type="AnalysisRequest", getId=sample_id)
         brains = api.search(query, CATALOG_ANALYSIS_REQUEST_LISTING)
         return True if brains else False
 
+
     @staticmethod
-    def get_qc_or_duplicate(sample_id):
-        query = dict(portal_type=["ReferenceAnalysis","DuplicateAnalysis"], getId=sample_id)
-        brains = api.search(query, "senaite_catalog")
-        try:
-            return api.get_object(brains[0])
-        except IndexError:
-            pass
-    
-    # @staticmethod
-    # def get_duplicate(sample_id): #to be made
-    #     query = dict(portal_type="DuplicateAnalysis", getId=sample_id)
-    #     brains = api.search(query, ANALYSIS_CATALOG)
-    #     try:
-    #         return api.get_object(brains[0])
-    #     except IndexError:
-    #         pass
+    def get_duplicate_or_qc(analysis_id,sample_service):
+        portal_types = ["DuplicateAnalysis", "ReferenceAnalysis"]
+        query = dict(
+            portal_type=portal_types, getReferenceAnalysesGroupID=analysis_id
+        )
+
+        brains = api.search(query, ANALYSIS_CATALOG)
+        analyses = dict((a.getKeyword, a) for a in brains)
+        brains = [v for k, v in analyses.items() if k.startswith(sample_service)]
+
+        if len(brains) < 1:
+            msg = ("No analysis found matching Keyword '${analysis_id}'",)
+            raise AnalysisNotFound(msg, analysis_id=analysis_id)
+        if len(brains) > 1:
+            msg = ("Multiple brains found matching Keyword '${analysis_id}'",)
+            raise MultipleAnalysesFound(msg, analysis_id=analysis_id)
+        return brains[0]
+
 
     @staticmethod
     def get_analyses(ar):
@@ -422,7 +320,6 @@ class flameatomicimport(object):
         override = request.form["results_override"]
         instrument = request.form.get("instrument", None)
         worksheet = request.form.get("worksheet", 0)
-        # import pdb; pdb.set_trace()
         parser = FlameAtomicParser(infile, worksheet=worksheet)
         if parser:
 
