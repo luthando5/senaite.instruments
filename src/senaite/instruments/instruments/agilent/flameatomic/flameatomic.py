@@ -85,6 +85,7 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         self.infile = infile
         self.csv_data = None
         self.sample_id = None
+        self.processed_samples_class = []
         mimetype, encoding = guess_type(self.infile.filename)
         InstrumentResultsFileParser.__init__(self, infile, mimetype)
 
@@ -202,41 +203,40 @@ class FlameAtomicParser(InstrumentResultsFileParser):
 
     def parse_row(self, row_nr, row,sample_service,round):
         parsed = {}
+        if {row[0]:sample_service} in self.processed_samples_class:
+            msg = ("Multiple results for Sample '{}' with sample service '{}' found. Not imported".format(row[0],sample_service))
+            raise MultipleAnalysesFound(msg)
         if self.is_sample(row[0]):
             sample = self.get_ar(row[0])
         else:
+            #Dealing with the Reference analyses
             sample = self.get_duplicate_or_qc(row[0],sample_service)
-
             if sample:
                 keyword = sample.getKeyword
+                self.processed_samples_class.append({row[0]:sample_service})
                 parsed["Reading"] = float(row[1])
                 parsed["Factor"] = float(row[8])
-                parsed["Round"] = float(round)
-                parsed["Formula"] = "[Reading]*[Factor] = [{0}]*[{1}]".format(row[1],row[8])
                 parsed.update({"DefaultResult": "Reading"})
                 self._addRawResult(row[0], {keyword: parsed})
                 return 0
             else:
                 return 0
-
+        # Dealing with the analysis requests
         analyses = sample.getAnalyses()
         for analysis in analyses:
             if sample_service == analysis.getKeyword:
                 keyword = analysis.getKeyword
                 if row[1] == 'OVER':
                     if round == 3:
+                        self.processed_samples_class.append({row[0]:sample_service})
                         parsed["Reading"] = float(999999)
-                        parsed["Factor"] = float(row[8])
-                        parsed["Round"] = float(round)
-                        parsed["Formula"] = "[Reading]*[Factor] = [{0}]*[{1}]".format(row[1],row[8])
+                        parsed["Factor"] = float(1)
                         parsed.update({"DefaultResult": "Reading"})
                         self._addRawResult(row[0], {keyword: parsed})
-
                     return
+                self.processed_samples_class.append({row[0]:sample_service})
                 parsed["Reading"] = float(row[1])
                 parsed["Factor"] = float(row[8])
-                parsed["Round"] = float(round)
-                parsed["Formula"] = "[Reading]*[Factor] = [{0}]*[{1}]".format(row[1],row[8])
                 parsed.update({"DefaultResult": "Reading"})
                 self._addRawResult(row[0], {keyword: parsed})
         return 
@@ -259,22 +259,22 @@ class FlameAtomicParser(InstrumentResultsFileParser):
 
 
     @staticmethod
-    def get_duplicate_or_qc(analysis_id,sample_service):
+    def get_duplicate_or_qc(analysis_id,sample_service,):
         portal_types = ["DuplicateAnalysis", "ReferenceAnalysis"]
         query = dict(
             portal_type=portal_types, getReferenceAnalysesGroupID=analysis_id
         )
-
+        
         brains = api.search(query, ANALYSIS_CATALOG)
         analyses = dict((a.getKeyword, a) for a in brains)
         brains = [v for k, v in analyses.items() if k.startswith(sample_service)]
 
         if len(brains) < 1:
-            msg = ("No analysis found matching Keyword '${analysis_id}'",)
-            raise AnalysisNotFound(msg, analysis_id=analysis_id)
+            msg = ("No analysis found matching Keyword '{}'".format(sample_service),)
+            raise AnalysisNotFound(msg, sample_service=sample_service)
         if len(brains) > 1:
-            msg = ("Multiple brains found matching Keyword '${analysis_id}'",)
-            raise MultipleAnalysesFound(msg, analysis_id=analysis_id)
+            msg = ("Multiple brains found matching Keyword '{}'".format(sample_service),)
+            raise MultipleAnalysesFound(msg, sample_service=sample_service)
         return brains[0]
 
 

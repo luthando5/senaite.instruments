@@ -53,6 +53,7 @@ path = join(here, 'files', 'instruments', 'agilent', 'flameatomic')
 fn_many_analyses = join(path, 'flameatomic_many_analyses.xlsx')
 fn_second = join(path, 'flameatomic_second.xlsx')
 fn_result_over = join(path,'flameatomic_OVER.xlsx' )
+fn_QC_and_blank = join(path,'flameatomic_QC_and_blank.xlsx')
 
 service_interims = [
     dict(keyword='reading', title='Reading', hidden=False)
@@ -117,7 +118,7 @@ class TestFlameAtomic(BaseTestCase):
             [srv.UID() for srv in self.services])
 
         api.do_transition_for(ar, 'receive')
-        import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
         data = open(fn_many_analyses, 'r').read()
         import_file = FileUpload(TestFile(cStringIO.StringIO(data), fn_many_analyses))
         
@@ -132,7 +133,7 @@ class TestFlameAtomic(BaseTestCase):
         a_gold = ar.getAnalyses(full_objects=True, getKeyword='Au')[0]
         a_mag = ar.getAnalyses(full_objects=True, getKeyword='Mg')[0]
         test_results = eval(results)  # noqa
-        self.assertEqual(a_gold.getResult(), '1.5')
+        self.assertEqual(a_gold.getResult(), '0.75')
         self.assertEqual(a_mag.getResult(), '3.0')
 
 
@@ -163,7 +164,7 @@ class TestFlameAtomic(BaseTestCase):
         api.do_transition_for(ar, 'receive')
         api.do_transition_for(ar_2, 'receive')
         api.do_transition_for(ar_3, 'receive')
-        import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
         data = open(fn_result_over, 'r').read()
         import_file = FileUpload(TestFile(cStringIO.StringIO(data), fn_result_over))
         
@@ -180,67 +181,67 @@ class TestFlameAtomic(BaseTestCase):
         a_gold_third = ar_3.getAnalyses(full_objects=True, getKeyword='Au')[0]
 
         test_results = eval(results)  # noqa
-        self.assertEqual(a_gold_first.getResult(), '2.0')
-        self.assertEqual(a_gold_second.getResult(), '1.5')
+        self.assertEqual(a_gold_first.getResult(), '0.5')
+        self.assertEqual(a_gold_second.getResult(), '0.375')
         self.assertEqual(a_gold_third.getResult(), '999999.0')
 
-    def test_general_requirements(self):
+    # def test_general_requirements(self):
         #1. Instrument should only accept requests in received state
         #2. Dilution factor multiplication should work fine.
         #3. 
-        ar = self.add_analysisrequest(
-            self.client,
-            dict(Client=self.client.UID(),
-                 Contact=self.contact.UID(),
-                 DateSampled=datetime.now().date().isoformat(),
-                 SampleType=self.sampletype.UID()),
-            [srv.UID() for srv in self.services])
-        ar_2 = self.add_analysisrequest(
-            self.client,
-            dict(Client=self.client.UID(),
-                 Contact=self.contact.UID(),
-                 DateSampled=datetime.now().date().isoformat(),
-                 SampleType=self.sampletype.UID()),
-            [srv.UID() for srv in self.services])
+        # ar = self.add_analysisrequest(
+        #     self.client,
+        #     dict(Client=self.client.UID(),
+        #          Contact=self.contact.UID(),
+        #          DateSampled=datetime.now().date().isoformat(),
+        #          SampleType=self.sampletype.UID()),
+        #     [srv.UID() for srv in self.services])
+        # ar_2 = self.add_analysisrequest(
+        #     self.client,
+        #     dict(Client=self.client.UID(),
+        #          Contact=self.contact.UID(),
+        #          DateSampled=datetime.now().date().isoformat(),
+        #          SampleType=self.sampletype.UID()),
+        #     [srv.UID() for srv in self.services])
 
-        ar_3 = self.add_analysisrequest(
-            self.client,
-            dict(Client=self.client.UID(),
-                 Contact=self.contact.UID(),
-                 DateSampled=datetime.now().date().isoformat(),
-                 SampleType=self.sampletype.UID()),
-            [srv.UID() for srv in self.services])
+        # ar_3 = self.add_analysisrequest(
+        #     self.client,
+        #     dict(Client=self.client.UID(),
+        #          Contact=self.contact.UID(),
+        #          DateSampled=datetime.now().date().isoformat(),
+        #          SampleType=self.sampletype.UID()),
+        #     [srv.UID() for srv in self.services])
 
-        api.do_transition_for(ar, 'receive')
-        api.do_transition_for(ar_2, 'receive')
-        api.do_transition_for(ar_3, 'receive')
-        import pdb;pdb.set_trace()
-        data = open(fn_result_over, 'r').read()
-        import_file = FileUpload(TestFile(cStringIO.StringIO(data), fn_result_over))
+        # api.do_transition_for(ar, 'receive')
+        # api.do_transition_for(ar_2, 'receive')
+        # api.do_transition_for(ar_3, 'receive')
+        # import pdb;pdb.set_trace()
+        # data = open(fn_result_over, 'r').read()
+        # import_file = FileUpload(TestFile(cStringIO.StringIO(data), fn_result_over))
         
-        request = TestRequest(form=dict(
-            submitted=True,
-            artoapply='received_tobeverified',
-            results_override='override',
-            instrument_results_file=import_file,
-            instrument=api.get_uid(self.instrument)))
+        # request = TestRequest(form=dict(
+        #     submitted=True,
+        #     artoapply='received_tobeverified',
+        #     results_override='override',
+        #     instrument_results_file=import_file,
+        #     instrument=api.get_uid(self.instrument)))
             
-        results = flameatomicimport.Import(self.portal, request)
-        a_gold_first = ar.getAnalyses(full_objects=True, getKeyword='Au')[0]
-        a_gold_second = ar_2.getAnalyses(full_objects=True, getKeyword='Au')[0]
-        a_gold_third = ar_3.getAnalyses(full_objects=True, getKeyword='Au')[0]
+        # results = flameatomicimport.Import(self.portal, request)
+        # a_gold_first = ar.getAnalyses(full_objects=True, getKeyword='Au')[0]
+        # a_gold_second = ar_2.getAnalyses(full_objects=True, getKeyword='Au')[0]
+        # a_gold_third = ar_3.getAnalyses(full_objects=True, getKeyword='Au')[0]
 
-        test_results = eval(results)  # noqa
-        self.assertEqual(a_gold_first.getResult(), '2.0')
-        self.assertEqual(a_gold_second.getResult(), '1.5')
-        self.assertEqual(a_gold_third.getResult(), '999999.0')
+        # test_results = eval(results)  # noqa
+        # self.assertEqual(a_gold_first.getResult(), '2.0')
+        # self.assertEqual(a_gold_second.getResult(), '1.5')
+        # self.assertEqual(a_gold_third.getResult(), '999999.0')
 
     def test_qc_samples(self):
         #1. The QC analyses can sometimes come in with only the sample ID QC22-019 and other times with the postfix QC22-019-005
         #2. The Sample ID read on file does not (necessarily) contain the postfix and the importer must search for QC analyses on Sample ID only for these
         #3. If more than one QC Analysis is found for the same Sample ID, the results value is not imported and the system reports “More than one Analysis found for Sample ID <...>. Not imported”
     #     pass
-
+        # import pdb;pdb.set_trace()
         #Variables
         portal = self.portal
         request = self.request
@@ -304,22 +305,43 @@ class TestFlameAtomic(BaseTestCase):
             'Client': api.get_uid(client),
             'Contact': api.get_uid(contact),
             'DateSampled': date_now,
-            'SampleType': sampletype_uid,
+            'SampleType': self.sampletype.UID(),#sampletype_uid,
             'Priority': '1',
         }
 
-        ar = create_analysisrequest(client, request, values, service_uids)
-        success = doActionFor(ar, 'receive')
+        data = open(fn_QC_and_blank, 'r').read()
+        import_file = FileUpload(TestFile(cStringIO.StringIO(data), fn_QC_and_blank))
         
+
+        request = TestRequest(form=dict(
+            submitted=True,
+            artoapply='received_tobeverified',
+            results_override='override',
+            instrument_results_file=import_file,
+            instrument=api.get_uid(self.instrument)))
+
+        # ar_first = self.add_analysisrequest(
+        #     self.client,
+        #     dict(Client=self.client.UID(),
+        #          Contact=self.contact.UID(),
+        #          DateSampled=datetime.now().date().isoformat(),
+        #          SampleType=self.sampletype.UID()),
+        #     [srv.UID() for srv in self.services])
+
+        ar_first = create_analysisrequest(client, request, values, service_uids)
+        # success = doActionFor(ar_first, 'receive')
+        api.do_transition_for(ar_first, 'receive')
+        # import pdb;pdb.set_trace()
 
     # Create a new Worksheet and add the analyses:
 
         worksheet = api.create(portal.worksheets, "Worksheet", Analyst='test_user_1_')
 
-        analyses = map(api.get_object, ar.getAnalyses())
+        analyses = map(api.get_object, ar_first.getAnalyses())
         analysis = analyses[0]
 
         worksheet.addAnalysis(analysis)
+        # import pdb;pdb.set_trace()
 
     # analysis.getWorksheet().UID() == worksheet.UID()
 
@@ -332,12 +354,72 @@ class TestFlameAtomic(BaseTestCase):
         transaction.commit()
         controls.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
         transaction.commit()
+
+        # import pdb;pdb.set_trace()
+        results = flameatomicimport.Import(self.portal, request)
+        a_gold_first = ar_first.getAnalyses(full_objects=True, getKeyword='Au')[0]
+        # a_gold_second = ar_first_2.getAnalyses(full_objects=True, getKeyword='Au')[0]
+        # a_gold_third = ar_first_3.getAnalyses(full_objects=True, getKeyword='Au')[0]
+
+        test_results = eval(results)  # noqa
+        self.assertEqual(a_gold_first.getResult(), '1.0')
+        # self.assertEqual(a_gold_second.getResult(), '0.375')
+        # self.assertEqual(a_gold_third.getResult(), '999999.0')
+
         for analysis in worksheet.getAnalyses():
             if analysis.portal_type == 'ReferenceAnalysis':
                 if analysis.getReferenceType() == 'b' or analysis.getReferenceType() == 'c':
                     # 3 is the number of interim fields on the analysis/calculation
                     if len(analysis.getInterimFields()) != 3:
                         self.fail("Blank or Control Analyses interim field are not correct")
+
+    # def test_qc_demo(self):
+
+    #     date_now = DateTime().strftime("%Y-%m-%d")
+    #     date_future = (DateTime() + 5).strftime("%Y-%m-%d")
+
+    #     supplier = api.create(bikasetup.bika_suppliers, "Supplier", Name="Naralabs")
+        
+    #     blankdef = api.create(bikasetup.bika_referencedefinitions, "ReferenceDefinition", title="Blank definition", Blank=True)
+    #     blank_refs = [{'uid': total_terpenes.UID(), 'result': '0', 'min': '0', 'max': '0'},]
+    #     blankdef.setReferenceResults(blank_refs)
+
+    #     # And for control:
+
+    #     controldef = api.create(bikasetup.bika_referencedefinitions, "ReferenceDefinition", title="Control definition")
+    #     control_refs = [{'uid': total_terpenes.UID(), 'result': '10', 'min': '9.99', 'max': '10.01'},]
+    #     controldef.setReferenceResults(control_refs)
+    #     #reference samples
+    #     blank = api.create(supplier, "ReferenceSample", title="Blank",
+    #         ReferenceDefinition=blankdef,
+    #         Blank=True, ExpiryDate=date_future,
+    #         ReferenceResults=blank_refs)
+    #     control = api.create(supplier, "ReferenceSample", title="Control",
+    #         ReferenceDefinition=controldef,
+    #         Blank=False, ExpiryDate=date_future,
+    #         ReferenceResults=control_refs)
+        
+
+    #     #analysis request creation
+    #     ar = create_analysisrequest(client, request, values, service_uids)
+    #     success = doActionFor(ar, 'receive')
+        
+    #     #Worksheet creation
+    #     worksheet = api.create(portal.worksheets, "Worksheet", Analyst='test_user_1_')
+
+    #     analyses = map(api.get_object, ar.getAnalyses())
+    #     analysis = analyses[0]
+
+    #     worksheet.addAnalysis(analysis)
+
+    #     blanks = worksheet.addReferenceAnalyses(blank, service_uids)
+    #     transaction.commit()
+    #     blanks.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+    #     controls = worksheet.addReferenceAnalyses(control, service_uids)
+    #     transaction.commit()
+    #     controls.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+    #     transaction.commit()
+    #     pass
 
 
 
