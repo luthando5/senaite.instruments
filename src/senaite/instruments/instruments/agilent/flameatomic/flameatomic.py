@@ -189,7 +189,8 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         for row_nr, row in enumerate(lines):
             if 'M\xc3\xa9thode: Au Aqua Regia Echelle' in row.split(",")[0]:
                 round = round + 1
-            if 'M\xc3\xa9thodes' in row.split(",")[0]: 
+            if 'M\xc3\xa9thodes' in row.split(",")[0]:
+                #Here we determine how many rounds there are in the sheet (Max = 3)
                 if row.split(",")[1]:
                     sample_service.append(row.split(",")[1])
                 if row.split(",")[2]:
@@ -197,19 +198,21 @@ class FlameAtomicParser(InstrumentResultsFileParser):
                 if row.split(",")[3]:
                     sample_service.append(row.split(",")[3])
             if row_nr > 5 and row.split(",")[0] and row.split(",")[1]:
+                #If we are past the headerlines and the first and second columns entries (of that row) are non empty
                 self.parse_row(row_nr, row.split(","),sample_service[round-1],round)
         return 0
 
 
     def parse_row(self, row_nr, row,sample_service,round):
         parsed = {}
+        #Here we check whether this sample ID has been processed already
         if {row[0]:sample_service} in self.processed_samples_class:
             msg = ("Multiple results for Sample '{}' with sample service '{}' found. Not imported".format(row[0],sample_service))
             raise MultipleAnalysesFound(msg)
         if self.is_sample(row[0]):
             sample = self.get_ar(row[0])
         else:
-            #Dealing with the Reference analyses
+            #Updating the Reference analyses
             sample = self.get_duplicate_or_qc(row[0],sample_service)
             if sample:
                 keyword = sample.getKeyword
@@ -221,18 +224,20 @@ class FlameAtomicParser(InstrumentResultsFileParser):
                 return 0
             else:
                 return 0
-        # Dealing with the analysis requests
+        # Updating the analysis requests
         analyses = sample.getAnalyses()
         for analysis in analyses:
             if sample_service == analysis.getKeyword:
                 keyword = analysis.getKeyword
                 if row[1] == 'OVER':
                     if round == 3:
+                        #If in the third round [Reading] = OVER then the value 999999 is assigned.
                         self.processed_samples_class.append({row[0]:sample_service})
                         parsed["Reading"] = float(999999)
                         parsed["Factor"] = float(1)
                         parsed.update({"DefaultResult": "Reading"})
                         self._addRawResult(row[0], {keyword: parsed})
+                    #If not in the 3rd round and Reading = OVER, we don't update the Reading
                     return
                 self.processed_samples_class.append({row[0]:sample_service})
                 parsed["Reading"] = float(row[1])
@@ -268,13 +273,12 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         brains = api.search(query, ANALYSIS_CATALOG)
         analyses = dict((a.getKeyword, a) for a in brains)
         brains = [v for k, v in analyses.items() if k.startswith(sample_service)]
-
         if len(brains) < 1:
             msg = ("No analysis found matching Keyword '{}'".format(sample_service),)
-            raise AnalysisNotFound(msg, sample_service=sample_service)
+            raise AnalysisNotFound(msg)
         if len(brains) > 1:
             msg = ("Multiple brains found matching Keyword '{}'".format(sample_service),)
-            raise MultipleAnalysesFound(msg, sample_service=sample_service)
+            raise MultipleAnalysesFound(msg)
         return brains[0]
 
 
