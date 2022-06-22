@@ -62,6 +62,7 @@ class Winlab32(InstrumentResultsFileParser):
         self.csv_data = None
         self.worksheet = 'Concentrations'
         self.sample_id = None
+        self.processed_samples = []
         mimetype, encoding = guess_type(self.infile.filename)
         InstrumentResultsFileParser.__init__(self, infile, mimetype)
 
@@ -118,20 +119,27 @@ class Winlab32(InstrumentResultsFileParser):
 
         try:
             if self.is_sample(sample_id):
-                ar = self.get_ar(sample_id)
-                analysis = self.get_analysis(ar, kw)
+                if {sample_id:kw} in self.processed_samples:
+                    analysis = self.get_ar_duplicates(sample_id, kw)
+                    new_kw = analysis.getKeyword
+                else:
+                    self.processed_samples.append({sample_id:kw})
+                    ar = self.get_ar(sample_id)
+                    analysis = self.get_analysis(ar, kw)
+                    new_kw = analysis.getKeyword
             elif self.is_analysis_group_id(sample_id):
                 analysis = self.get_duplicate_or_qc_analysis(sample_id, kw)
+                new_kw = analysis.getKeyword
             else:
                 sample_reference = self.get_reference_sample(sample_id, kw)
                 analysis = self.get_reference_sample_analysis(sample_reference, kw)
+                new_kw = analysis.getKeyword()
         except Exception as e:
             self.warn(msg="Error getting analysis for '${s}/${kw}': ${e}",
                       mapping={'s': sample_id, 'kw': kw, 'e': repr(e)},
                       numline=row_nr, line=str(row))
             return
 
-        new_kw = analysis.getKeyword
         self._addRawResult(sample_id, {new_kw: parsed})
         return 0
 
@@ -202,6 +210,23 @@ class Winlab32(InstrumentResultsFileParser):
         brains = api.search(query, ANALYSIS_CATALOG)
         analyses = dict((a.getKeyword, a) for a in brains)
         brains = [v for k, v in analyses.items() if k.startswith(kw)]
+        if len(brains) < 1:
+            msg = ("No analysis found matching Keyword '${kw}'",)
+            raise AnalysisNotFound(msg, kw=kw)
+        if len(brains) > 1:
+            msg = ("Multiple brains found matching Keyword '${kw}'",)
+            raise MultipleAnalysesFound(msg, kw=kw)
+        return brains[0]
+
+    @staticmethod
+    def get_ar_duplicates(analysis_id, kw):
+        query = dict(portal_type="DuplicateAnalysis")
+        duplicates = api.search(query, ANALYSIS_CATALOG)
+        analyses = dict((a.getKeyword, [a, a.getReferenceAnalysesGroupID]) for a in duplicates)
+        brains = []
+        for k, v in analyses.items():
+            if k.startswith(kw) and v[1].startswith(analysis_id):
+                brains.append(v[0])
         if len(brains) < 1:
             msg = ("No analysis found matching Keyword '${kw}'",)
             raise AnalysisNotFound(msg, kw=kw)
