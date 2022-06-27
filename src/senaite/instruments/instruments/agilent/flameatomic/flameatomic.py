@@ -18,7 +18,7 @@
 # Copyright 2018-2019 by it's authors.
 # Some rights reserved, see README and LICENSE.
 
-import csv
+# import csv # Unused Code
 import json
 import types
 import traceback
@@ -46,19 +46,19 @@ from senaite.instruments.instrument import SheetNotFound
 from zope.interface import implements
 from zope.publisher.browser import FileUpload
 
-
-field_interim_map = {
-    "Formula": "formula",
-    "Concentration": "concentration",
-    "Z": "z",
-    "Status": "status",
-    "Line 1": "line_1",
-    "Net int.": "net_int",
-    "LLD": "lld",
-    "Stat. error": "stat_error",
-    "Analyzed layer": "analyzed_layer",
-    "Bound %": "bound_pct",
-}
+# Unused Code
+# field_interim_map = {
+#     "Formula": "formula",
+#     "Concentration": "concentration",
+#     "Z": "z",
+#     "Status": "status",
+#     "Line 1": "line_1",
+#     "Net int.": "net_int",
+#     "LLD": "lld",
+#     "Stat. error": "stat_error",
+#     "Analyzed layer": "analyzed_layer",
+#     "Bound %": "bound_pct",
+# }
 
 
 class SampleNotFound(Exception):
@@ -155,13 +155,14 @@ class FlameAtomicParser(InstrumentResultsFileParser):
 
 
     def parse(self):
+        # import pdb;pdb.set_trace()
         order = []
         ext = splitext(self.infile.filename.lower())[-1]
         if ext == ".xlsx":
             order = (self.xlsx_to_csv, self.xls_to_csv)
         elif ext == ".xls":
             order = (self.xls_to_csv, self.xlsx_to_csv)
-        elif ext == ".csv":
+        elif ext == ".csv" or ".prn":
             self.csv_data = self.infile
         if order:
             for importer in order:
@@ -184,26 +185,27 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         self.csv_data = FileUpload(stub)
         lines = self.csv_data.readlines()
 
-        round = 0
+        analysis_round = 0
         sample_service = []
-        for row_nr, row in enumerate(lines):
+        for row_nr, row in enumerate(lines): #This whole part can be a function
             if 'M\xc3\xa9thode: Au Aqua Regia Echelle' in row.split(",")[0]:
-                round = round + 1
+                analysis_round = analysis_round + 1
             if 'M\xc3\xa9thodes' in row.split(",")[0]:
                 #Here we determine how many rounds there are in the sheet (Max = 3)
                 if row.split(",")[1]:
-                    sample_service.append(row.split(",")[1])
+                    sample_service.append(row.split(",")[1].replace('"',''))
                 if row.split(",")[2]:
-                    sample_service.append(row.split(",")[2])
+                    sample_service.append(row.split(",")[2].replace('"',''))
                 if row.split(",")[3]:
-                    sample_service.append(row.split(",")[3])
+                    sample_service.append(row.split(",")[3].replace('"',''))
             if row_nr > 5 and row.split(",")[0] and row.split(",")[1]:
                 #If we are past the headerlines and the first and second columns entries (of that row) are non empty
-                self.parse_row(row_nr, row.split(","),sample_service[round-1],round)
+                self.parse_row(row_nr, row.split(","),sample_service[analysis_round-1],analysis_round)
         return 0
 
 
-    def parse_row(self, row_nr, row,sample_service,round):
+    def parse_row(self, row_nr, row,sample_service,analysis_round):
+        #Try to restructure parse row suc
         parsed = {}
         #Here we check whether this sample ID has been processed already
         if {row[0]:sample_service} in self.processed_samples_class:
@@ -213,8 +215,8 @@ class FlameAtomicParser(InstrumentResultsFileParser):
             sample = self.get_ar(row[0])
         else:
             #Updating the Reference analyses
-            sample = self.get_duplicate_or_qc(row[0],sample_service)
-            if sample:
+            sample = self.get_duplicate_or_qc(row[0],sample_service)# change to qc or reference
+            if sample:# Don't have to check for sample as an error will be thrown already
                 keyword = sample.getKeyword
                 self.processed_samples_class.append({row[0]:sample_service})
                 parsed["Reading"] = float(row[1])
@@ -226,24 +228,25 @@ class FlameAtomicParser(InstrumentResultsFileParser):
                 return 0
         # Updating the analysis requests
         analyses = sample.getAnalyses()
-        for analysis in analyses:
+        for analysis in analyses: #Use getAnalysis instead of getAnalyses using the keyword is the distinguisher
             if sample_service == analysis.getKeyword:
                 keyword = analysis.getKeyword
                 if row[1] == 'OVER':
-                    if round == 3:
-                        #If in the third round [Reading] = OVER then the value 999999 is assigned.
+                    if analysis_round == 3:
+                        #If in the third analysis_round [Reading] = OVER then the value 999999 is assigned.
                         self.processed_samples_class.append({row[0]:sample_service})
                         parsed["Reading"] = float(999999)
                         parsed["Factor"] = float(1)
                         parsed.update({"DefaultResult": "Reading"})
                         self._addRawResult(row[0], {keyword: parsed})
-                    #If not in the 3rd round and Reading = OVER, we don't update the Reading
+                    #If not in the 3rd analysis_round and Reading = OVER, we don't update the Reading
                     return
                 self.processed_samples_class.append({row[0]:sample_service})
                 parsed["Reading"] = float(row[1])
                 parsed["Factor"] = float(row[8])
                 parsed.update({"DefaultResult": "Reading"})
                 self._addRawResult(row[0], {keyword: parsed})
+                #Avoid repetition
         return 
 
 
@@ -274,10 +277,11 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         analyses = dict((a.getKeyword, a) for a in brains)
         brains = [v for k, v in analyses.items() if k.startswith(sample_service)]
         if len(brains) < 1:
-            msg = ("No analysis found matching Keyword '{}'".format(sample_service),)
+            import pdb;pdb.set_trace()
+            msg = ("No analysis found matching Keyword {}".format(sample_service))
             raise AnalysisNotFound(msg)
         if len(brains) > 1:
-            msg = ("Multiple brains found matching Keyword '{}'".format(sample_service),)
+            msg = ("Multiple brains found matching Keyword {}".format(sample_service))
             raise MultipleAnalysesFound(msg)
         return brains[0]
 
