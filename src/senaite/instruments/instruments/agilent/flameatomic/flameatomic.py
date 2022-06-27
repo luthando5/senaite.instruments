@@ -155,7 +155,6 @@ class FlameAtomicParser(InstrumentResultsFileParser):
 
 
     def parse(self):
-        # import pdb;pdb.set_trace()
         order = []
         ext = splitext(self.infile.filename.lower())[-1]
         if ext == ".xlsx":
@@ -277,7 +276,6 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         analyses = dict((a.getKeyword, a) for a in brains)
         brains = [v for k, v in analyses.items() if k.startswith(sample_service)]
         if len(brains) < 1:
-            import pdb;pdb.set_trace()
             msg = ("No analysis found matching Keyword {}".format(sample_service))
             raise AnalysisNotFound(msg)
         if len(brains) > 1:
