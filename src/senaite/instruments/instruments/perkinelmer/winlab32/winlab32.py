@@ -119,11 +119,11 @@ class Winlab32(InstrumentResultsFileParser):
 
         try:
             if self.is_sample(sample_id):
-                if {sample_id:kw} in self.processed_samples:
+                if {sample_id: kw} in self.processed_samples:
                     analysis = self.get_ar_duplicates(sample_id, kw)
                     new_kw = analysis.getKeyword
                 else:
-                    self.processed_samples.append({sample_id:kw})
+                    self.processed_samples.append({sample_id: kw})
                     ar = self.get_ar(sample_id)
                     analysis = self.get_analysis(ar, kw)
                     new_kw = analysis.getKeyword
