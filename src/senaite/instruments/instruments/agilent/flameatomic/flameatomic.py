@@ -182,24 +182,27 @@ class FlameAtomicParser(InstrumentResultsFileParser):
                 return -1
         stub = FileStub(file=self.csv_data, name=str(self.infile.filename))
         self.csv_data = FileUpload(stub)
-        lines = self.csv_data.readlines()
+
+        lines_with_parentheses = self.csv_data.readlines()
+        lines = [i.replace('"','').replace('\r\n','') for i in lines_with_parentheses]
 
         analysis_round = 0
         sample_service = []
         for row_nr, row in enumerate(lines): #This whole part can be a function
-            if 'M\xc3\xa9thode: Au Aqua Regia Echelle' in row.split(",")[0]:
+            split_row = row.split(",")
+            if 'M\xc3\xa9thode:' in split_row[0] or 'M\xe9thode:' in split_row[0]:
                 analysis_round = analysis_round + 1
-            if 'M\xc3\xa9thodes' in row.split(",")[0]:
+            if 'M\xc3\xa9thodes' in split_row[0] or 'M\xe9thodes' in split_row[0]:
                 #Here we determine how many rounds there are in the sheet (Max = 3)
-                if row.split(",")[1]:
-                    sample_service.append(row.split(",")[1].replace('"',''))
-                if row.split(",")[2]:
-                    sample_service.append(row.split(",")[2].replace('"',''))
-                if row.split(",")[3]:
-                    sample_service.append(row.split(",")[3].replace('"',''))
-            if row_nr > 5 and row.split(",")[0] and row.split(",")[1]:
+                if split_row[1]:
+                    sample_service.append(split_row[1])
+                if len(split_row) > 2 and split_row[2]:
+                    sample_service.append(split_row[2])
+                if len(split_row) > 3 and split_row[3]:
+                    sample_service.append(split_row[3])
+            if analysis_round > 0 and split_row[0] and len(split_row)>2 and split_row[1]: #How long is split_row of theres an empty cell inbetween?
                 #If we are past the headerlines and the first and second columns entries (of that row) are non empty
-                self.parse_row(row_nr, row.split(","),sample_service[analysis_round-1],analysis_round)
+                self.parse_row(row_nr, split_row,sample_service[analysis_round-1],analysis_round)
         return 0
 
 
@@ -271,7 +274,6 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         query = dict(
             portal_type=portal_types, getReferenceAnalysesGroupID=analysis_id
         )
-        
         brains = api.search(query, ANALYSIS_CATALOG)
         analyses = dict((a.getKeyword, a) for a in brains)
         brains = [v for k, v in analyses.items() if k.startswith(sample_service)]
