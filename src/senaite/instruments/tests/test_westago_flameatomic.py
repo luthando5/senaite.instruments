@@ -319,6 +319,24 @@ class TestFlameAtomic(BaseTestCase):
         data = open(fn_QC_and_blank, 'r').read()
 
         import_file = FileUpload(TestFile(cStringIO.StringIO(data), fn_QC_and_blank))
+
+    # Add a blank and a control:
+        blanks = worksheet.addReferenceAnalyses(blank, service_uids)
+        blanks2 = worksheet.addReferenceAnalyses(blank, service_uids)
+        blanks3 = worksheet.addReferenceAnalyses(blank, service_uids)
+        transaction.commit()
+        blanks.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+        blanks2.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+        blanks3.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+        controls = worksheet.addReferenceAnalyses(control, service_uids)
+        controls2 = worksheet.addReferenceAnalyses(control, service_uids)
+        controls3 = worksheet.addReferenceAnalyses(control, service_uids)
+        transaction.commit()
+        controls.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+        controls2.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+        controls3.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+        transaction.commit()
+
         request = TestRequest(form=dict(
             submitted=True,
             artoapply='received_tobeverified',
@@ -327,16 +345,7 @@ class TestFlameAtomic(BaseTestCase):
             instrument=api.get_uid(self.instrument)))
             
         results = flameatomicimport.Import(self.portal, request)
-
-    # Add a blank and a control:
-        import pdb;pdb.set_trace()
-        blanks = worksheet.addReferenceAnalyses(blank, service_uids)
-        transaction.commit()
-        blanks.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
-        controls = worksheet.addReferenceAnalyses(control, service_uids)
-        transaction.commit()
-        controls.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
-        transaction.commit()
+        # import pdb;pdb.set_trace()
         for analysis in worksheet.getAnalyses():
              if analysis.portal_type == 'ReferenceAnalysis':
                  if analysis.getReferenceType() == 'b' or analysis.getReferenceType() == 'c':
