@@ -17,8 +17,7 @@
 #
 # Copyright 2018-2019 by it's authors.
 # Some rights reserved, see README and LICENSE.
-
-# import csv # Unused Code
+import csv
 import json
 import types
 import traceback
@@ -28,6 +27,7 @@ from openpyxl import load_workbook
 from os.path import abspath
 from os.path import splitext
 from xlrd import open_workbook
+import xml.etree.ElementTree as ET
 
 from senaite.core.exportimport.instruments import (
     IInstrumentAutoImportInterface, IInstrumentImportInterface
@@ -46,19 +46,7 @@ from senaite.instruments.instrument import SheetNotFound
 from zope.interface import implements
 from zope.publisher.browser import FileUpload
 
-# Unused Code
-# field_interim_map = {
-#     "Formula": "formula",
-#     "Concentration": "concentration",
-#     "Z": "z",
-#     "Status": "status",
-#     "Line 1": "line_1",
-#     "Net int.": "net_int",
-#     "LLD": "lld",
-#     "Stat. error": "stat_error",
-#     "Analyzed layer": "analyzed_layer",
-#     "Bound %": "bound_pct",
-# }
+field_interim_map = {"Dilution": "Factor","Result": "Reading"}
 
 
 class SampleNotFound(Exception):
@@ -72,6 +60,123 @@ class MultipleAnalysesFound(Exception):
 class AnalysisNotFound(Exception):
     pass
 
+class DR3900XMLParser(InstrumentResultsFileParser):
+    ar = None
+
+    def __init__(self, infile, worksheet=None, encoding=None, delimiter=None):
+        self.delimiter = delimiter if delimiter else ","
+        self.encoding = encoding
+        self.ar = None
+        self.analyses = None
+        self.worksheet = worksheet if worksheet else 0
+        self.infile = infile
+        self.csv_data = None
+        self.sample_id = None
+        self.processed_samples_class = []
+        self._assays = {}
+        self._instruments = {}
+        mimetype, encoding = guess_type(self.infile.filename)
+        InstrumentResultsFileParser.__init__(self, infile, mimetype)
+
+    def parse(self):
+        """ parse the data"""
+        import pdb;pdb.set_trace()
+        tree = ET.parse(self.getInputFile())
+        root = tree.getroot()
+        # Building Assay dictionary to query names by id from test results line
+        for as_ref in root.find("Sample ID").findall("AssayRef"):
+            self._assays[as_ref.get("KEY_AssayRef")] = as_ref.get("ID")
+
+        # Building Instruments dictionary to get Serial number by id
+        for ins in root.find("Instruments").findall("Instrument"):
+            self._instruments[ins.get("KEY_InstrumentData")] = \
+                ins.get("SerialNumber")
+
+        for t_req in root.iter("TestRequest"):
+            t_res = t_req.find("TestResult")
+            if len(t_res) == 0 or not t_res.get("Valid", "false") == "true":
+                continue
+            res_id = t_req.get("SampleID")
+            test_name = self._assays.get(t_req.get("KEY_AssayRef"))
+            test_name = format_keyword(test_name)
+            result = t_res.get("Value")
+            if not result:
+                continue
+            result = result.split(" cps/ml")[0]
+            detected = t_res.get("Detected")
+
+            # SOME ADDITIONAL DATA
+            # Getting instrument serial number from 'Run' element which is
+            # parent of 'TestRequest' elements
+            ins_serial = t_req.getParent().get("KEY_InstrumentData")
+
+            # Matrix is important for calculation.
+            matrix = t_req.get("Matrix")
+            # For now, using EasyQDirector as keyword, but this is not the
+            # right way. test_name must be used.
+            values = {
+                'EasyQDirector': {
+                    "DefaultResult": "Result",
+                    "Result": result,
+                    "Detected": detected,
+                    "Matrix": matrix,
+                    "Instrument": ins_serial
+                }
+            }
+            self._addRawResult(res_id, values)
+
+
+    @staticmethod
+    def get_ar(sample_id):
+        query = dict(portal_type="AnalysisRequest", getId=sample_id)
+        brains = api.search(query, CATALOG_ANALYSIS_REQUEST_LISTING)
+        try:
+            return api.get_object(brains[0])
+        except IndexError:
+            pass
+    
+    @staticmethod
+    def is_sample(sample_id):
+        query = dict(portal_type="AnalysisRequest", getId=sample_id)
+        brains = api.search(query, CATALOG_ANALYSIS_REQUEST_LISTING)
+        return True if brains else False
+
+
+    @staticmethod
+    def get_duplicate_or_qc(analysis_id,sample_service,):
+        portal_types = ["DuplicateAnalysis", "ReferenceAnalysis"]
+        query = dict(
+            portal_type=portal_types, getReferenceAnalysesGroupID=analysis_id
+        )
+        brains = api.search(query, ANALYSIS_CATALOG)
+        analyses = dict((a.getKeyword, a) for a in brains)
+        brains = [v for k, v in analyses.items() if k.startswith(sample_service)]
+        if len(brains) < 1:
+            msg = ("No analysis found matching Keyword {}".format(sample_service))
+            raise AnalysisNotFound(msg)
+        if len(brains) > 1:
+            msg = ("Multiple brains found matching Keyword {}".format(sample_service))
+            raise MultipleAnalysesFound(msg)
+        return brains[0]
+
+
+    @staticmethod
+    def get_analyses(ar):
+        analyses = ar.getAnalyses()
+        return dict((a.getKeyword, a) for a in analyses)
+
+    def get_analysis(self, ar, kw):
+        analyses = self.get_analyses(ar)
+        analyses = [v for k, v in analyses.items() if k.startswith(kw)]
+        if len(analyses) < 1:
+            self.log('No analysis found matching keyword "${kw}"', mapping=dict(kw=kw))
+            return None
+        if len(analyses) > 1:
+            self.warn(
+                'Multiple analyses found matching Keyword "${kw}"', mapping=dict(kw=kw)
+            )
+            return None
+        return analyses[0]
 
 class DR3900Parser(InstrumentResultsFileParser):
     ar = None
@@ -90,15 +195,11 @@ class DR3900Parser(InstrumentResultsFileParser):
         InstrumentResultsFileParser.__init__(self, infile, mimetype)
 
     def xls_to_csv(self, infile, worksheet=0, delimiter=","):
+        # import pdb;pdb.set_trace()
         """
         Convert xlsx to easier format first, since we want to use the
         convenience of the CSV library
         """
-
-        def find_sheet(wb, worksheet):
-            for sheet in wb.sheets():
-                if sheet.name == worksheet:
-                    return sheet
 
         wb = open_workbook(file_contents=infile.read())
         sheet = wb.sheets()[worksheet]
@@ -120,6 +221,7 @@ class DR3900Parser(InstrumentResultsFileParser):
         return buffer
 
     def xlsx_to_csv(self, infile, worksheet=None, delimiter=","):
+        # import pdb;pdb.set_trace()
         worksheet = worksheet if worksheet else 0
         wb = load_workbook(filename=infile)
         if worksheet in wb.sheetnames:
@@ -156,12 +258,13 @@ class DR3900Parser(InstrumentResultsFileParser):
 
     def parse(self):
         order = []
+        # import pdb;pdb.set_trace()
         ext = splitext(self.infile.filename.lower())[-1]
-        if ext == ".xlsx":
+        if ext == ".xlsx": #fix in flameatomic also
             order = (self.xlsx_to_csv, self.xls_to_csv)
         elif ext == ".xls":
             order = (self.xls_to_csv, self.xlsx_to_csv)
-        elif ext == ".csv" or ".prn":
+        elif ext == ".csv" or ext == ".prn":
             self.csv_data = self.infile
         if order:
             for importer in order:
@@ -182,9 +285,28 @@ class DR3900Parser(InstrumentResultsFileParser):
                 return -1
         stub = FileStub(file=self.csv_data, name=str(self.infile.filename))
         self.csv_data = FileUpload(stub)
+        data = self.csv_data.read()
+        lines_with_parentheses = data.decode('utf-16').split("\r\n")
+        lines = [i.replace('"','') for i in lines_with_parentheses]
+        
+        relevant_lines = self.extract_relevant_columns(lines)
+        reader = csv.DictReader(relevant_lines)
 
-        lines_with_parentheses = self.csv_data.readlines()
-        lines = [i.replace('"','').replace('\r\n','') for i in lines_with_parentheses]
+        headers_parsed = self.parse_headerlines(reader)
+        import pdb;pdb.set_trace()
+        if headers_parsed:
+            for row in reader:
+                self.parse_row(row,reader.line_num)
+        return 0
+
+        # lines_with_parentheses = self.csv_data.readlines()
+        # lines = [i.replace('"','') for i in lines_with_parentheses]
+        # lines = [i.replace('\r\n','') for i in lines]
+        
+
+        if headers_parsed:
+            for row_nr, row in enumerate(lines):
+                pass
 
         analysis_round = 0
         sample_service = []
@@ -204,11 +326,26 @@ class DR3900Parser(InstrumentResultsFileParser):
                 #If we are past the headerlines and the first and second columns entries (of that row) are non empty
                 self.parse_row(row_nr, split_row,sample_service[analysis_round-1],analysis_round)
         return 0
+    
+    def extract_relevant_columns(self,lines):
+        new_lines = []
+        for row in lines:
+            split_row = row.encode("ascii","ignore").split(",")
+            if len(split_row) > 13:
+                new_lines.append(','.join([str(elem) for elem in split_row]))
+                # new_lines.append(split_row[3]+","+split_row[8]+","+split_row[11]+","+split_row[13])
+        return new_lines
 
 
-    def parse_row(self, row_nr, row,sample_service,analysis_round):
+
+    def parse_headerlines(self,reader):
+        return True
+
+    def parse_row(self, row, row_nr):
+        pass
         #Try to restructure parse row suc
         parsed = {}
+        parsed = {field_interim_map.get(k, ''): v for k, v in row.items()}
         #Here we check whether this sample ID has been processed already
         if {row[0]:sample_service} in self.processed_samples_class:
             msg = ("Multiple results for Sample '{}' with sample service '{}' found. Not imported".format(row[0],sample_service))
@@ -321,14 +458,20 @@ class dr3900import(object):
         warns = []
 
         infile = request.form["instrument_results_file"]
-        if not hasattr(infile, "filename"):
-            errors.append(_("No file selected"))
-
         artoapply = request.form["artoapply"]
         override = request.form["results_override"]
         instrument = request.form.get("instrument", None)
         worksheet = request.form.get("worksheet", 0)
-        parser = DR3900Parser(infile, worksheet=worksheet)
+
+        ext = splitext(infile.filename.lower())[-1]
+        # import pdb;pdb.set_trace()
+        if not hasattr(infile, "filename"):
+            errors.append(_("No file selected"))
+        if ext == '.xml':
+            parser = DR3900XMLParser(infile,worksheet = worksheet)
+        else:
+            parser = DR3900Parser(infile, worksheet=worksheet)
+
         if parser:
 
             status = ["sample_received", "attachment_due", "to_be_verified"]
