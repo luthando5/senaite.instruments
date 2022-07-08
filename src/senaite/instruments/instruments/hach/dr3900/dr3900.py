@@ -19,15 +19,10 @@
 # Some rights reserved, see README and LICENSE.
 import csv
 import json
-import types
 import traceback
-from cStringIO import StringIO
 from mimetypes import guess_type
-from openpyxl import load_workbook
 from os.path import abspath
 from os.path import splitext
-from xlrd import open_workbook
-import xml.etree.ElementTree as ET
 
 from senaite.core.exportimport.instruments import (
     IInstrumentAutoImportInterface, IInstrumentImportInterface
@@ -36,6 +31,8 @@ from senaite.core.exportimport.instruments.resultsimport import (
     AnalysisResultsImporter)
 from senaite.core.exportimport.instruments.resultsimport import (
     InstrumentResultsFileParser)
+from senaite.instruments.instrument import xls_to_csv
+from senaite.instruments.instrument import xlsx_to_csv
 
 from bika.lims import api
 from bika.lims import bikaMessageFactory as _
@@ -60,123 +57,6 @@ class MultipleAnalysesFound(Exception):
 class AnalysisNotFound(Exception):
     pass
 
-class DR3900XMLParser(InstrumentResultsFileParser):
-    ar = None
-
-    def __init__(self, infile, worksheet=None, encoding=None, delimiter=None):
-        self.delimiter = delimiter if delimiter else ","
-        self.encoding = encoding
-        self.ar = None
-        self.analyses = None
-        self.worksheet = worksheet if worksheet else 0
-        self.infile = infile
-        self.csv_data = None
-        self.sample_id = None
-        self.processed_samples_class = []
-        self._assays = {}
-        self._instruments = {}
-        mimetype, encoding = guess_type(self.infile.filename)
-        InstrumentResultsFileParser.__init__(self, infile, mimetype)
-
-    def parse(self):
-        """ parse the data"""
-        import pdb;pdb.set_trace()
-        tree = ET.parse(self.getInputFile())
-        root = tree.getroot()
-        # Building Assay dictionary to query names by id from test results line
-        for as_ref in root.find("Sample ID").findall("AssayRef"):
-            self._assays[as_ref.get("KEY_AssayRef")] = as_ref.get("ID")
-
-        # Building Instruments dictionary to get Serial number by id
-        for ins in root.find("Instruments").findall("Instrument"):
-            self._instruments[ins.get("KEY_InstrumentData")] = \
-                ins.get("SerialNumber")
-
-        for t_req in root.iter("TestRequest"):
-            t_res = t_req.find("TestResult")
-            if len(t_res) == 0 or not t_res.get("Valid", "false") == "true":
-                continue
-            res_id = t_req.get("SampleID")
-            test_name = self._assays.get(t_req.get("KEY_AssayRef"))
-            test_name = format_keyword(test_name)
-            result = t_res.get("Value")
-            if not result:
-                continue
-            result = result.split(" cps/ml")[0]
-            detected = t_res.get("Detected")
-
-            # SOME ADDITIONAL DATA
-            # Getting instrument serial number from 'Run' element which is
-            # parent of 'TestRequest' elements
-            ins_serial = t_req.getParent().get("KEY_InstrumentData")
-
-            # Matrix is important for calculation.
-            matrix = t_req.get("Matrix")
-            # For now, using EasyQDirector as keyword, but this is not the
-            # right way. test_name must be used.
-            values = {
-                'EasyQDirector': {
-                    "DefaultResult": "Result",
-                    "Result": result,
-                    "Detected": detected,
-                    "Matrix": matrix,
-                    "Instrument": ins_serial
-                }
-            }
-            self._addRawResult(res_id, values)
-
-
-    @staticmethod
-    def get_ar(sample_id):
-        query = dict(portal_type="AnalysisRequest", getId=sample_id)
-        brains = api.search(query, CATALOG_ANALYSIS_REQUEST_LISTING)
-        try:
-            return api.get_object(brains[0])
-        except IndexError:
-            pass
-    
-    @staticmethod
-    def is_sample(sample_id):
-        query = dict(portal_type="AnalysisRequest", getId=sample_id)
-        brains = api.search(query, CATALOG_ANALYSIS_REQUEST_LISTING)
-        return True if brains else False
-
-
-    @staticmethod
-    def get_duplicate_or_qc(analysis_id,sample_service,):
-        portal_types = ["DuplicateAnalysis", "ReferenceAnalysis"]
-        query = dict(
-            portal_type=portal_types, getReferenceAnalysesGroupID=analysis_id
-        )
-        brains = api.search(query, ANALYSIS_CATALOG)
-        analyses = dict((a.getKeyword, a) for a in brains)
-        brains = [v for k, v in analyses.items() if k.startswith(sample_service)]
-        if len(brains) < 1:
-            msg = ("No analysis found matching Keyword {}".format(sample_service))
-            raise AnalysisNotFound(msg)
-        if len(brains) > 1:
-            msg = ("Multiple brains found matching Keyword {}".format(sample_service))
-            raise MultipleAnalysesFound(msg)
-        return brains[0]
-
-
-    @staticmethod
-    def get_analyses(ar):
-        analyses = ar.getAnalyses()
-        return dict((a.getKeyword, a) for a in analyses)
-
-    def get_analysis(self, ar, kw):
-        analyses = self.get_analyses(ar)
-        analyses = [v for k, v in analyses.items() if k.startswith(kw)]
-        if len(analyses) < 1:
-            self.log('No analysis found matching keyword "${kw}"', mapping=dict(kw=kw))
-            return None
-        if len(analyses) > 1:
-            self.warn(
-                'Multiple analyses found matching Keyword "${kw}"', mapping=dict(kw=kw)
-            )
-            return None
-        return analyses[0]
 
 class DR3900Parser(InstrumentResultsFileParser):
     ar = None
@@ -190,70 +70,9 @@ class DR3900Parser(InstrumentResultsFileParser):
         self.infile = infile
         self.csv_data = None
         self.sample_id = None
-        self.processed_samples_class = []
+        self.processed_samples = []
         mimetype, encoding = guess_type(self.infile.filename)
         InstrumentResultsFileParser.__init__(self, infile, mimetype)
-
-    def xls_to_csv(self, infile, worksheet=0, delimiter=","):
-        # import pdb;pdb.set_trace()
-        """
-        Convert xlsx to easier format first, since we want to use the
-        convenience of the CSV library
-        """
-
-        wb = open_workbook(file_contents=infile.read())
-        sheet = wb.sheets()[worksheet]
-
-        buffer = StringIO()
-
-        # extract all rows
-        for row in sheet.get_rows():
-            line = []
-            for cell in row:
-                value = cell.value
-                if type(value) in types.StringTypes:
-                    value = value.encode("utf8")
-                if value is None:
-                    value = ""
-                line.append(str(value))
-            print >> buffer, delimiter.join(line)
-        buffer.seek(0)
-        return buffer
-
-    def xlsx_to_csv(self, infile, worksheet=None, delimiter=","):
-        # import pdb;pdb.set_trace()
-        worksheet = worksheet if worksheet else 0
-        wb = load_workbook(filename=infile)
-        if worksheet in wb.sheetnames:
-            sheet = wb[worksheet]
-        else:
-            try:
-                index = int(worksheet)
-                sheet = wb.worksheets[index]
-            except (ValueError, TypeError, IndexError):
-                raise SheetNotFound
-
-        buffer = StringIO()
-
-        for row in sheet.rows:
-            line = []
-            for cell in row:
-                new_val = ''
-                if cell.number_format == "0.00%":
-                    new_val = '{}%'.format(cell.value * 100)
-                cellval = new_val if new_val else cell.value
-                if (isinstance(cellval, (int, long, float))):
-                    value = "" if cellval is None else str(cellval).encode("utf8")
-                else:
-                    value = "" if cellval is None else cellval.encode("utf8")
-                if "\n" in value:
-                    value = value.split("\n")[0]
-                line.append(value.strip())
-            if not any(line):
-                continue
-            buffer.write(delimiter.join(line) + "\n")
-        buffer.seek(0)
-        return buffer
 
 
     def parse(self):
@@ -261,9 +80,9 @@ class DR3900Parser(InstrumentResultsFileParser):
         # import pdb;pdb.set_trace()
         ext = splitext(self.infile.filename.lower())[-1]
         if ext == ".xlsx": #fix in flameatomic also
-            order = (self.xlsx_to_csv, self.xls_to_csv)
+            order = (xlsx_to_csv, xls_to_csv)
         elif ext == ".xls":
-            order = (self.xls_to_csv, self.xlsx_to_csv)
+            order = (xls_to_csv, xlsx_to_csv)
         elif ext == ".csv" or ext == ".prn":
             self.csv_data = self.infile
         if order:
@@ -283,110 +102,66 @@ class DR3900Parser(InstrumentResultsFileParser):
             else:
                 self.warn("Can't parse input file as XLS, XLSX, or CSV.")
                 return -1
+
         stub = FileStub(file=self.csv_data, name=str(self.infile.filename))
         self.csv_data = FileUpload(stub)
         data = self.csv_data.read()
-        lines_with_parentheses = data.decode('utf-16').split("\r\n")
+
+        decoded_data = self.try_utf8(data)
+        if decoded_data:
+            lines_with_parentheses = decoded_data.split("\n")
+        else:
+            lines_with_parentheses = data.decode('utf-16').split("\r\n")
         lines = [i.replace('"','') for i in lines_with_parentheses]
         
-        relevant_lines = self.extract_relevant_columns(lines)
-        reader = csv.DictReader(relevant_lines)
+        ascii_lines = self.extract_relevant_data(lines)
+        reader = csv.DictReader(ascii_lines)
 
         headers_parsed = self.parse_headerlines(reader)
-        import pdb;pdb.set_trace()
+
         if headers_parsed:
             for row in reader:
                 self.parse_row(row,reader.line_num)
         return 0
 
-        # lines_with_parentheses = self.csv_data.readlines()
-        # lines = [i.replace('"','') for i in lines_with_parentheses]
-        # lines = [i.replace('\r\n','') for i in lines]
-        
-
-        if headers_parsed:
-            for row_nr, row in enumerate(lines):
-                pass
-
-        analysis_round = 0
-        sample_service = []
-        for row_nr, row in enumerate(lines): #This whole part can be a function
-            split_row = row.split(",")
-            if 'M\xc3\xa9thode:' in split_row[0] or 'M\xe9thode:' in split_row[0]:
-                analysis_round = analysis_round + 1
-            if 'M\xc3\xa9thodes' in split_row[0] or 'M\xe9thodes' in split_row[0]:
-                #Here we determine how many rounds there are in the sheet (Max = 3)
-                if split_row[1]:
-                    sample_service.append(split_row[1])
-                if len(split_row) > 2 and split_row[2]:
-                    sample_service.append(split_row[2])
-                if len(split_row) > 3 and split_row[3]:
-                    sample_service.append(split_row[3])
-            if analysis_round > 0 and split_row[0] and len(split_row)>2 and split_row[1]: #How long is split_row of theres an empty cell inbetween?
-                #If we are past the headerlines and the first and second columns entries (of that row) are non empty
-                self.parse_row(row_nr, split_row,sample_service[analysis_round-1],analysis_round)
-        return 0
-    
-    def extract_relevant_columns(self,lines):
-        new_lines = []
-        for row in lines:
-            split_row = row.encode("ascii","ignore").split(",")
-            if len(split_row) > 13:
-                new_lines.append(','.join([str(elem) for elem in split_row]))
-                # new_lines.append(split_row[3]+","+split_row[8]+","+split_row[11]+","+split_row[13])
-        return new_lines
-
-
-
-    def parse_headerlines(self,reader):
-        return True
 
     def parse_row(self, row, row_nr):
-        pass
-        #Try to restructure parse row suc
-        parsed = {}
-        parsed = {field_interim_map.get(k, ''): v for k, v in row.items()}
-        #Here we check whether this sample ID has been processed already
-        if {row[0]:sample_service} in self.processed_samples_class:
-            msg = ("Multiple results for Sample '{}' with sample service '{}' found. Not imported".format(row[0],sample_service))
+        parsed_strings = {}
+
+        parsed_strings = self.interim_map_sorter(row)
+        parsed = self.data_cleaning(parsed_strings)
+        sample_ID = row.get("Sample ID:")
+        sample_service = row.get("Parameter:")
+
+        if not sample_service or not sample_ID or not row.get("Result").strip(" "):
+            self.warn("Data not entered correctly for '{}' with sample ID '{}' and result of '{}'".format(sample_service,sample_ID,row.get("Result")))
+            return 0
+
+        if {sample_ID:sample_service} in self.processed_samples:
+            msg = ("Multiple results for Sample '{}' with sample service '{}' found. Not imported".format(sample_ID,sample_service))
             raise MultipleAnalysesFound(msg)
-        if self.is_sample(row[0]):
-            sample = self.get_ar(row[0])
-        else:
-            #Updating the Reference analyses
-            sample = self.get_duplicate_or_qc(row[0],sample_service)# change to qc or reference
-            if sample:# Don't have to check for sample as an error will be thrown already
-                keyword = sample.getKeyword
-                self.processed_samples_class.append({row[0]:sample_service})
-                parsed["Reading"] = float(row[1])
-                parsed["Factor"] = float(row[8])
-                parsed.update({"DefaultResult": "Reading"})
-                self._addRawResult(row[0], {keyword: parsed})
-                return 0
-            else:
-                return 0
-        # Updating the analysis requests
-        analyses = sample.getAnalyses()
-        for analysis in analyses: #Use getAnalysis instead of getAnalyses using the keyword is the distinguisher
-            if sample_service == analysis.getKeyword:
+
+        try:
+            if self.is_sample(sample_ID):
+                ar = self.get_ar(sample_ID)
+                analysis = self.get_analysis(ar,sample_service)
                 keyword = analysis.getKeyword
-                if row[1] == 'OVER':
-                    if analysis_round == 3:
-                        #If in the third analysis_round [Reading] = OVER then the value 999999 is assigned.
-                        self.processed_samples_class.append({row[0]:sample_service})
-                        parsed["Reading"] = float(999999)
-                        parsed["Factor"] = float(1)
-                        parsed.update({"DefaultResult": "Reading"})
-                        self._addRawResult(row[0], {keyword: parsed})
-                    #If not in the 3rd analysis_round and Reading = OVER, we don't update the Reading
-                    return
-                self.processed_samples_class.append({row[0]:sample_service})
-                parsed["Reading"] = float(row[1])
-                parsed["Factor"] = float(row[8])
-                parsed.update({"DefaultResult": "Reading"})
-                self._addRawResult(row[0], {keyword: parsed})
-                #Avoid repetition
-        return 
+            elif self.is_analysis_group_id(sample_ID):
+                analysis = self.get_duplicate_or_qc(sample_ID,sample_service)
+                keyword = analysis.getKeyword
+            else:
+                sample_reference = self.get_reference_sample(sample_ID, sample_service)
+                analysis = self.get_reference_sample_analysis(sample_reference, sample_service)
+                keyword = analysis.getKeyword()
+        except Exception as e:
+            self.warn(msg="Error getting analysis for '${s}/${kw}': ${e}",
+                      mapping={'s': sample_ID, 'kw': sample_service, 'e': repr(e)},
+                      numline=row_nr, line=str(row))
+            return
+        self.processed_samples.append({sample_ID:sample_service})
+        parsed.update({"DefaultResult": "Reading"})
+        self._addRawResult(sample_ID, {keyword: parsed})
+        return 0
 
 
     @staticmethod
@@ -422,6 +197,19 @@ class DR3900Parser(InstrumentResultsFileParser):
             raise MultipleAnalysesFound(msg)
         return brains[0]
 
+    @staticmethod
+    def is_analysis_group_id(analysis_group_id):
+        portal_types = ["DuplicateAnalysis", "ReferenceAnalysis"]
+        query = dict(
+            portal_type=portal_types, getReferenceAnalysesGroupID=analysis_group_id
+        )
+        brains = api.search(query, ANALYSIS_CATALOG)
+        return True if brains else False
+
+    @staticmethod
+    def get_reference_sample_analyses(reference_sample):
+        brains = reference_sample.getObject().getReferenceAnalyses()
+        return dict((a.getKeyword(), a) for a in brains)
 
     @staticmethod
     def get_analyses(ar):
@@ -442,10 +230,58 @@ class DR3900Parser(InstrumentResultsFileParser):
         return analyses[0]
 
 
+    @staticmethod
+    def extract_relevant_data(lines):
+        new_lines = []
+        for row in lines:
+            split_row = row.encode("ascii","ignore").split(",")
+            if len(split_row) > 13:
+                new_lines.append(','.join([str(elem) for elem in split_row]))
+        return new_lines
+
+
+    @staticmethod
+    def try_utf8(data):
+        """Returns a Unicode object on success, or None on failure"""
+        try:
+            return data.decode('utf-8')
+        except UnicodeDecodeError:
+            return None
+
+    @staticmethod
+    def parse_headerlines(reader):
+        "To be implemented if necessary"
+        return True
+
+
+    @staticmethod
+    def interim_map_sorter(row):
+        interims = {}
+        for k,v in row.items():
+            sub = field_interim_map.get(k,'')
+            if sub != '':
+                interims[sub] = v
+        return interims
+    
+
+    @staticmethod
+    def data_cleaning(parsed):
+        for k,v in parsed.items():
+            #Sometimes a Factor value is not included in sheet
+            if k == "Factor" and not v:
+                parsed[k] = 1
+            else:
+                try:
+                    parsed[k] = float(v)
+                except (TypeError, ValueError):
+                    parsed[k] = v
+        return parsed
+
+
 class dr3900import(object):
     implements(IInstrumentImportInterface, IInstrumentAutoImportInterface)
     title = "Hach DR3900"
-    __file__ = abspath(__file__)  # noqa
+    __file__ = abspath(__file__)
 
     def __init__(self, context):
         self.context = context
@@ -464,13 +300,10 @@ class dr3900import(object):
         worksheet = request.form.get("worksheet", 0)
 
         ext = splitext(infile.filename.lower())[-1]
-        # import pdb;pdb.set_trace()
         if not hasattr(infile, "filename"):
             errors.append(_("No file selected"))
-        if ext == '.xml':
-            parser = DR3900XMLParser(infile,worksheet = worksheet)
-        else:
-            parser = DR3900Parser(infile, worksheet=worksheet)
+
+        parser = DR3900Parser(infile, worksheet=worksheet)
 
         if parser:
 
