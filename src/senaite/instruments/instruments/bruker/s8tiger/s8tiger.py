@@ -29,8 +29,6 @@ from os.path import basename
 from os.path import splitext
 from re import subn
 from xlrd import open_workbook
-# from senaite.instruments.instrument import xls_to_csv
-# # from senaite.instruments.instrument import xlsx_to_csv
 
 from senaite.core.exportimport.instruments import (
     IInstrumentAutoImportInterface, IInstrumentImportInterface
@@ -43,6 +41,7 @@ from senaite.core.exportimport.instruments.resultsimport import (
 from bika.lims import api
 from bika.lims import bikaMessageFactory as _
 from bika.lims.catalog import CATALOG_ANALYSIS_REQUEST_LISTING
+from senaite.core.catalog import ANALYSIS_CATALOG, SENAITE_CATALOG
 from senaite.instruments.instrument import FileStub
 from senaite.instruments.instrument import SheetNotFound
 from zope.interface import implements
@@ -151,7 +150,6 @@ class S8TigerParser(InstrumentResultsFileParser):
         buffer.seek(0)
         return buffer
 
-
     def parse(self):
         order = []
         ext = splitext(self.infile.filename.lower())[-1]
@@ -183,49 +181,52 @@ class S8TigerParser(InstrumentResultsFileParser):
 
         try:
             sample_id, ext = splitext(basename(self.infile.filename))
-            # maybe the filename is a sample ID, just the way it is
-            ar = self.get_ar(sample_id)
-            if not ar:
+            portal_type = self.get_portal_type(sample_id)
+            # Check for sample, duplicates and reference analysis(QC)
+            if not portal_type:
                 # maybe we need to chop of it's -9digit suffix
                 sample_id = "-".join(sample_id.split("-")[:-1])
-                ar = self.get_ar(sample_id)
-                if not ar:
+                portal_type = self.get_portal_type(sample_id)
+                if not portal_type:
                     # or we are out of luck
                     msg = "Can't find sample for " + self.infile.filename
                     self.warn(msg)
                     return -1
-            self.ar = ar
+
             self.sample_id = sample_id
-            self.analyses = self.get_analyses(ar)
         except Exception as e:
             self.err(repr(e))
             return False
         lines = self.csv_data.readlines()
         reader = csv.DictReader(lines)
-        for row in reader:
-            self.parse_row(ar, reader.line_num, row)
+        if portal_type == "AnalysisRequest":
+            for row in reader:
+                self.parse_ar_row(sample_id, reader.line_num, row)
+
+        elif portal_type in ["DuplicateAnalysis", "ReferenceAnalysis"]:
+            for row in reader:
+                self.parse_duplicate_row(sample_id, reader.line_num, row)
+
+        elif portal_type == "ReferenceSample":
+            for row in reader:
+                self.parse_reference_sample_row(sample_id, reader.line_num, row)
         return 0
 
-    def parse_row(self, ar, row_nr, row):
-        # convert row to use interim field names
+    def get_portal_type(self, sample_id):
+        portal_type = None
+        if self.is_sample(sample_id):
+            ar = self.get_ar(sample_id)
+            self.ar = ar
+            self.analyses = self.get_analyses(ar)
+            portal_type = ar.portal_type
+        elif self.is_analysis_group_id(sample_id):
+            portal_type = "DuplicateAnalysis"
+        elif self.is_reference_sample(sample_id):
+            portal_type = "ReferenceSample"
+        return portal_type
+
+    def parse_row(self, row_nr, row, keyword):
         parsed = {field_interim_map.get(k, ""): v for k, v in row.items()}
-
-        formula = parsed.get("formula")
-        kw = subn(r'[^\w\d\-_]*', '', formula)[0]
-        try:
-            analysis = self.get_analysis(ar, kw)
-            if not analysis:
-                return 0
-            keyword = analysis.getKeyword
-        except Exception as e:
-            self.warn(
-                msg="Error getting analysis for '${kw}': ${e}",
-                mapping={"kw": kw, "e": repr(e)},
-                numline=row_nr,
-                line=str(row),
-            )
-            return
-
         # Concentration can be PPM or PCT as it likes, I'll save both.
         concentration = parsed["concentration"]
         try:
@@ -256,6 +257,88 @@ class S8TigerParser(InstrumentResultsFileParser):
         self._addRawResult(self.sample_id, {keyword: parsed})
         return 0
 
+    def parse_ar_row(self, sample_id, row_nr, row):
+        ar = self.get_ar(sample_id)
+        # convert row to use interim field names
+        parsed = {field_interim_map.get(k, ""): v for k, v in row.items()}
+
+        formula = parsed.get("formula")
+        kw = subn(r'[^\w\d\-_]*', '', formula)[0]
+        try:
+            analysis = self.get_analysis(ar, kw)
+            if not analysis:
+                return 0
+            keyword = analysis.getKeyword
+        except Exception as e:
+            self.warn(
+                msg="Error getting analysis for '${kw}': ${e}",
+                mapping={"kw": kw, "e": repr(e)},
+                numline=row_nr,
+                line=str(row),
+            )
+            return
+        return self.parse_row(row_nr, row, keyword)
+
+    def parse_duplicate_row(self, sample_id, row_nr, row):
+        # convert row to use interim field names
+        parsed = {field_interim_map.get(k, ""): v for k, v in row.items()}
+        try:
+            formula = parsed.get("formula")
+            kw = subn(r'[^\w\d\-_]*', '', formula)[0]
+            keyword = self.getDuplicateKeyord(sample_id, kw)
+        except Exception as e:
+            self.warn(
+                msg="Error getting analysis for '${kw}': ${e}",
+                mapping={"kw": kw, "e": repr(e)},
+                numline=row_nr,
+                line=str(row),
+            )
+            return
+        return self.parse_row(row_nr, row, keyword)
+
+    def getDuplicateKeyord(self, sample_id, kw):
+        analysis = self.get_duplicate_or_qc_analysis(sample_id, kw)
+        return analysis.getKeyword
+
+    def parse_reference_sample_row(self, sample_id, row_nr, row):
+        # convert row to use interim field names
+        parsed = {field_interim_map.get(k, ""): v for k, v in row.items()}
+        try:
+            formula = parsed.get("formula")
+            kw = subn(r'[^\w\d\-_]*', '', formula)[0]
+            keyword = self.getReferenceSampleKeyword(sample_id, kw)
+        except Exception as e:
+            self.warn(
+                msg="Error getting analysis for '${kw}': ${e}",
+                mapping={"kw": kw, "e": repr(e)},
+                numline=row_nr,
+                line=str(row),
+            )
+            return
+        return self.parse_row(row_nr, row, keyword)
+
+    def getReferenceSampleKeyword(self, sample_id, kw):
+        sample_reference = self.get_reference_sample(sample_id, kw)
+        analysis = self.get_reference_sample_analysis(sample_reference, kw)
+        return analysis.getKeyword()
+
+    @staticmethod
+    def get_duplicate_or_qc_analysis(analysis_id, kw):
+        portal_types = ["DuplicateAnalysis", "ReferenceAnalysis"]
+        query = dict(
+            portal_type=portal_types, getReferenceAnalysesGroupID=analysis_id
+        )
+        brains = api.search(query, ANALYSIS_CATALOG)
+        analyses = dict((a.getKeyword, a) for a in brains)
+        brains = [v for k, v in analyses.items() if k.startswith(kw)]
+        if len(brains) < 1:
+            msg = ("No analysis found matching Keyword '${kw}'",)
+            raise AnalysisNotFound(msg, kw=kw)
+        if len(brains) > 1:
+            msg = ("Multiple brains found matching Keyword '${kw}'",)
+            raise MultipleAnalysesFound(msg, kw=kw)
+        return brains[0]
+
     @staticmethod
     def get_ar(sample_id):
         query = dict(portal_type="AnalysisRequest", getId=sample_id)
@@ -264,6 +347,12 @@ class S8TigerParser(InstrumentResultsFileParser):
             return api.get_object(brains[0])
         except IndexError:
             pass
+
+    @staticmethod
+    def is_sample(sample_id):
+        query = dict(portal_type="AnalysisRequest", getId=sample_id)
+        brains = api.search(query, CATALOG_ANALYSIS_REQUEST_LISTING)
+        return True if brains else False
 
     @staticmethod
     def get_analyses(ar):
@@ -282,6 +371,37 @@ class S8TigerParser(InstrumentResultsFileParser):
             )
             return None
         return analyses[0]
+
+    @staticmethod
+    def is_analysis_group_id(analysis_group_id):
+        portal_types = ["DuplicateAnalysis", "ReferenceAnalysis"]
+        query = dict(
+            portal_type=portal_types, getReferenceAnalysesGroupID=analysis_group_id
+        )
+        brains = api.search(query, ANALYSIS_CATALOG)
+        return True if brains else False
+
+    @staticmethod
+    def is_reference_sample(reference_sample_id):
+        query = dict(
+            portal_type="ReferenceSample", getId=reference_sample_id
+        )
+        brains = api.search(query, SENAITE_CATALOG)
+        return True if brains else False
+
+    @staticmethod
+    def get_reference_sample(reference_sample_id, kw):
+        query = dict(
+            portal_type="ReferenceSample", getId=reference_sample_id
+        )
+        brains = api.search(query, SENAITE_CATALOG)
+        if len(brains) < 1:
+            msg = ("No reference sample found matching Keyword '${kw}'",)
+            raise AnalysisNotFound(msg, kw=kw)
+        if len(brains) > 1:
+            msg = ("Multiple brains found matching Keyword '{}'".format(kw))
+            raise MultipleAnalysesFound(msg)
+        return brains[0]
 
 
 class importer(object):
