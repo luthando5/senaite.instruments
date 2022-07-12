@@ -77,7 +77,6 @@ class DR3900Parser(InstrumentResultsFileParser):
 
     def parse(self):
         order = []
-        # import pdb;pdb.set_trace()
         ext = splitext(self.infile.filename.lower())[-1]
         if ext == ".xlsx": #fix in flameatomic also
             order = (xlsx_to_csv, xls_to_csv)
@@ -132,7 +131,6 @@ class DR3900Parser(InstrumentResultsFileParser):
         parsed = self.data_cleaning(parsed_strings)
         sample_ID = row.get("Sample ID:")
         sample_service = row.get("Parameter:").replace(" ","")
-        import pdb;pdb.set_trace()
 
         if not sample_service or not sample_ID or not row.get("Result").strip(" "):
             self.warn("Data not entered correctly for '{}' with sample ID '{}' and result of '{}'".format(sample_service,sample_ID,row.get("Result")))
