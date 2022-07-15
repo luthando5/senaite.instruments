@@ -18,16 +18,19 @@
 # Copyright 2018-2019 by it's authors.
 # Some rights reserved, see README and LICENSE.
 
-# import csv # Unused Code
+import csv
 import json
 import types
 import traceback
 from cStringIO import StringIO
+from DateTime import DateTime
 from mimetypes import guess_type
 from openpyxl import load_workbook
 from os.path import abspath
 from os.path import splitext
 from xlrd import open_workbook
+import xml.etree.cElementTree as ET
+from bika.lims.browser import BrowserView
 
 from senaite.core.exportimport.instruments import (
     IInstrumentAutoImportInterface, IInstrumentImportInterface
@@ -36,6 +39,7 @@ from senaite.core.exportimport.instruments.resultsimport import (
     AnalysisResultsImporter)
 from senaite.core.exportimport.instruments.resultsimport import (
     InstrumentResultsFileParser)
+from senaite.core.exportimport.instruments import IInstrumentExportInterface
 
 from bika.lims import api
 from bika.lims import bikaMessageFactory as _
@@ -45,6 +49,10 @@ from senaite.instruments.instrument import FileStub
 from senaite.instruments.instrument import SheetNotFound
 from zope.interface import implements
 from zope.publisher.browser import FileUpload
+from zope.component import getUtility
+from plone.i18n.normalizer.interfaces import IIDNormalizer
+from senaite.app.supermodel.interfaces import ISuperModel
+from zope.component import getAdapter
 
 # Unused Code
 # field_interim_map = {
@@ -365,3 +373,240 @@ class flameatomicimport(object):
         results = {"errors": errors, "log": logs, "warns": warns}
 
         return json.dumps(results)
+
+
+class Export(BrowserView):
+    # implements(IInstrumentExportInterface)
+    title = "Agilent Flame Atomic Exporter"
+    __file__ = abspath(__file__)  # noqa
+
+    def __init__(self, context,request):
+        self.context = context
+        self.request = request
+
+    def __call__(self, analyses):
+        # import pdb;pdb.set_trace()
+        # tray = 1
+        now = DateTime().strftime('%Y%m%d-%H%M')
+        uc = api.get_tool('uid_catalog')
+        instrument = self.context.getInstrument()
+        norm = getUtility(IIDNormalizer).normalize
+        filename = '{}-{}.csv'.format(
+            self.context.getId(), norm(self.title))
+            # self.context.getId(), norm(instrument.getDataInterface()))
+        # listname = '{}_{}_{}'.format(
+        #     self.context.getId(),  norm(instrument.getDataInterface()))
+
+            
+        options = {
+            'dilute_factor': 1,
+            'method': 'Dilution',
+            'notneeded1': 1,
+            'notneeded2': 1,
+            'notneeded3': 10
+        }
+        
+        sample_cases = {'a':'SAMP','b':'BLANK','c':'CRM','d':'DUP'}
+
+        # for k, v in instrument.getDataInterfaceOptions():
+        #     options[k] = v
+
+        # for looking up "cup" number (= slot) of ARs
+        # parent_to_slot = {}
+        
+        # for x in range(len(layout)):
+        #     a_uid = layout[x]['analysis_uid']
+        #     p_uid = uc(UID=a_uid)[0].getObject().aq_parent.UID()
+        #     layout[x]['parent_uid'] = p_uid
+        #     if p_uid not in parent_to_slot.keys():
+        #         parent_to_slot[p_uid] = int(layout[x]['position'])
+
+        # write rows, one per PARENT
+        # import pdb;pdb.set_trace()
+        layout = self.context.getLayout()
+        # header = [listname, options['method']]
+        # rows = []
+        # rows.append(header)
+        tmprows = []
+        Used_IDs = []
+        test_list = []
+
+
+        for item in layout: #Could use enumerate
+            # create batch header row
+            c_uid = item['container_uid']
+            # p_uid = item['parent_uid']
+            a_uid = item['analysis_uid']
+            analysis = uc(UID=a_uid)[0].getObject() if a_uid else None
+            keyword = str(analysis.Keyword)
+            container = uc(UID=c_uid)[0].getObject() if c_uid else None
+            sample_type = sample_cases[item['type']]
+            
+            # sample = getAdapter(item['container_uid'], ISuperModel).id
+
+
+            if item['type'] == 'a':
+                analysis_id = container.id
+            elif (item['type'] in 'bcd'):
+                analysis_id = analysis.getReferenceAnalysesGroupID()
+            test_list.append([[analysis_id,sample_type,keyword]])
+            if keyword == "PeseePourFusion":
+                if analysis_id in Used_IDs:
+                    continue
+                weight = analysis.getResult()
+                if not weight:
+                    weight = 50
+                tmprows.append(['',
+                                analysis_id,
+                                sample_type,
+                                weight,
+                                # keyword,
+                                options['dilute_factor'],
+                                options["notneeded1"],
+                                options["notneeded2"],
+                                options["notneeded3"]])
+                Used_IDs.append(analysis_id)
+        # import pdb;pdb.set_trace()
+        # tmprows.sort(lambda a, b: cmp(a[0], b[0]))
+        # rows += tmprows
+
+
+        # ramdisk = StringIO()
+        # writer = csv.writer(ramdisk, delimiter=',')
+
+        # assert(writer)
+        # writer.writerows(rows)
+        # result = ramdisk.getvalue()
+        # ramdisk.close()
+        import pdb;pdb.set_trace()
+        # headers = {'Content-Length': 21321,'Content-Type': 'text/comma-separated-values','Content-Disposition': 'inline; filename=%s' % filename}
+        # request.get(request.getURL(),headers)
+        # stream file to browser
+
+        rows = self.row_sorter(tmprows)
+        result2 = self.list_to_string(rows)
+        setheader = self.request.RESPONSE.setHeader
+        setheader('Content-Length', len(result2))
+        setheader('Content-Disposition', 'inline; filename=%s' % filename)
+        setheader('Content-Type', 'text/csv')
+        # self.self.request.RESPONSE.write(result2)
+        self.request.RESPONSE.write(result2)
+    
+
+    @staticmethod
+    def utf8len(s):
+        return len(s.encode('utf-8'))
+    
+
+    @staticmethod
+    def list_to_string(rows): #maybe dict to string
+        final_rows = ''
+        interim_rows = []
+        
+        for row in rows:
+            row = ','.join(str(item) for item in row)
+            interim_rows.append(row)
+        final_rows = '\r\n'.join(interim_rows)
+        # import pdb;pdb.set_trace()
+        return final_rows
+            
+
+    
+    @staticmethod
+    def row_sorter(rows):
+        sample_cases = {'SAMP': 2,'BLANK':0,'CRM':1,'DUP':3}
+        reversed_dict = {v: k for k, v in sample_cases.items()}
+        for row in rows:
+            row[2] = sample_cases[row[2]]
+        rows.sort(lambda a, b: cmp(a[2], b[2]))
+        for indx,row in enumerate(rows):
+            row[0] = indx+1
+            row[2] = reversed_dict[row[2]]
+        return rows
+        
+        
+            
+
+                # self.warn("No Pesee Pour Fusion result for {}. Default of 50g allocated".format(analysis_id))
+            # cup = parent_to_slot[p_uid]
+
+    # def Export(self, context, request):
+    #     tray = 1
+    #     norm = getUtility(IIDNormalizer).normalize
+    #     filename = '{}-{}.xml'.format(
+    #         context.getId(), norm(self.title))
+    #     now = str(DateTime())[:16]
+
+    #     root = ET.Element('SequenceTableDataSet')
+    #     root.set('SchemaVersion', "1.0")
+    #     root.set('SequenceComment', "")
+    #     root.set('SequenceOperator', "")
+    #     root.set('SequenceSeqPathFileName', "")
+    #     root.set('SequencePreSeqAcqCommand', "")
+    #     root.set('SequencePostSeqAcqCommand', "")
+    #     root.set('SequencePreSeqDACommand', "")
+    #     root.set('SequencePostSeqDACommand', "")
+    #     root.set('SequenceReProcessing', "False")
+    #     root.set('SequenceInjectBarCodeMismatch', "OnBarcodeMismatchInjectAnyway")
+    #     root.set('SequenceOverwriteExistingData', "False")
+    #     root.set('SequenceModifiedTimeStamp', now)
+    #     root.set('SequenceFileECMPath', "")
+
+    #     # for looking up "cup" number (= slot) of ARs
+    #     parent_to_slot = {}
+    #     layout = context.getLayout()
+    #     for item in layout:
+    #         p_uid = item.get('parent_uid')
+    #         if not p_uid:
+    #             p_uid = item.get('container_uid')
+    #         if p_uid not in parent_to_slot.keys():
+    #             parent_to_slot[p_uid] = int(item['position'])
+
+    #     rows = []
+    #     sequences = []
+    #     for item in layout:
+    #         # create batch header row
+    #         p_uid = item.get('parent_uid')
+    #         if not p_uid:
+    #             p_uid = item.get('container_uid')
+    #         if not p_uid:
+    #             continue
+    #         if p_uid in sequences:
+    #             continue
+    #         sequences.append(p_uid)
+    #         cup = parent_to_slot[p_uid]
+    #         rows.append({
+    #             'tray': tray,
+    #             'cup': cup,
+    #             'analysis_uid': getAdapter(item['analysis_uid'], ISuperModel),
+    #             'sample': getAdapter(item['container_uid'], ISuperModel)
+    #         })
+    #     rows.sort(lambda a, b: cmp(a['cup'], b['cup']))
+
+    #     cnt = 0
+    #     for row in rows:
+    #         seq = ET.SubElement(root, 'Sequence')
+    #         ET.SubElement(seq, 'SequenceID').text = str(row['tray'])
+    #         ET.SubElement(seq, 'SampleID').text = str(cnt)
+    #         ET.SubElement(seq, 'AcqMethodFileName').text = 'Dunno'
+    #         ET.SubElement(seq, 'AcqMethodPathName').text = 'Dunno'
+    #         ET.SubElement(seq, 'DataFileName').text = row['sample'].Title()
+    #         ET.SubElement(seq, 'DataPathName').text = 'Dunno'
+    #         ET.SubElement(seq, 'SampleName').text = row['sample'].Title()
+    #         import pdb;pdb.set_trace()
+    #         if row['sample'].title == 'Test Reference Sample':
+    #             ET.SubElement(seq, 'SampleType').text = "Test Reference Sample"
+    #         else:
+    #             ET.SubElement(seq, 'SampleType').text = row['sample'].SampleType.Title()
+    #         ET.SubElement(seq, 'Vial').text = str(row['cup'])
+    #         cnt += 1
+    #     import pdb;pdb.set_trace()
+    #     xml = ET.tostring(root, method='xml')
+    #     # stream file to browser
+    #     setheader = request.RESPONSE.setHeader
+    #     setheader('Content-Length', len(xml.encode('utf-16')))
+    #     # setheader('Content-Length', len(xml))
+    #     setheader('Content-Disposition',
+    #               'attachment; filename="%s"' % filename)
+    #     setheader('Content-Type', 'text/xml')
+    #     request.RESPONSE.write(xml)
