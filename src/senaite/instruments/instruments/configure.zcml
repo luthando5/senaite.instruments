@@ -14,11 +14,18 @@
     factory=".agilent.flameatomic.flameatomic.flameatomicimport"
     provides="senaite.core.exportimport.instruments.IInstrumentImportInterface"/>
 
+
    <adapter
     for="*"
     name="flameatomic_exporter"
     factory=".agilent.flameatomic.flameatomic.Export"
     provides="senaite.core.exportimport.instruments.IInstrumentExportInterface"/>
+    
+    <adapter
+    for="*"
+    name="dr3900_importer"
+    factory=".hach.dr3900.dr3900.dr3900import"
+    provides="senaite.core.exportimport.instruments.IInstrumentImportInterface"/>
 
 <!-- Incomplete ...
    <adapter
