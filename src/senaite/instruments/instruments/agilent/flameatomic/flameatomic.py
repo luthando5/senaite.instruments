@@ -18,6 +18,7 @@
 # Copyright 2018-2019 by it's authors.
 # Some rights reserved, see README and LICENSE.
 
+import re
 import csv
 import json
 import types
@@ -53,20 +54,6 @@ from zope.component import getUtility
 from plone.i18n.normalizer.interfaces import IIDNormalizer
 from senaite.app.supermodel.interfaces import ISuperModel
 from zope.component import getAdapter
-
-# Unused Code
-# field_interim_map = {
-#     "Formula": "formula",
-#     "Concentration": "concentration",
-#     "Z": "z",
-#     "Status": "status",
-#     "Line 1": "line_1",
-#     "Net int.": "net_int",
-#     "LLD": "lld",
-#     "Stat. error": "stat_error",
-#     "Analyzed layer": "analyzed_layer",
-#     "Bound %": "bound_pct",
-# }
 
 
 class SampleNotFound(Exception):
@@ -188,15 +175,36 @@ class FlameAtomicParser(InstrumentResultsFileParser):
             else:
                 self.warn("Can't parse input file as XLS, XLSX, or CSV.")
                 return -1
+        import pdb;pdb.set_trace()
         stub = FileStub(file=self.csv_data, name=str(self.infile.filename))
         self.csv_data = FileUpload(stub)
 
-        lines_with_parentheses = self.csv_data.readlines()
-        lines = [i.replace('"','').replace('\r\n','') for i in lines_with_parentheses]
+        data = self.csv_data.read()
+        decoded_data = self.try_utf8(data)
+        if decoded_data:
+            lines_with_parentheses = decoded_data.split("\r\n")
+        else:
+            decoded_data = self.try_utf16(data)
+            if decoded_data:
+                lines_with_parentheses = data.decode('utf-16').split("\r\n")
+            else:
+                lines_with_parentheses = re.sub(r'[^\x00-\x7f]',r'', data).split("\r\n")
+        lines = [i.replace('"','') for i in lines_with_parentheses]
+
+        ascii_lines = self.extract_relevant_data(lines)
+
+        import pdb;pdb.set_trace()
+        reader = csv.DictReader(ascii_lines)
+        # clean_lines = ascii_lines
+
+        #We're here now
+        # lines_with_parentheses = self.csv_data.readlines()
+        # lines = [i.replace('"','').replace('\r\n','') for i in lines_with_parentheses]
+        # self.parse_headers()
 
         analysis_round = 0
         sample_service = []
-        for row_nr, row in enumerate(lines): #This whole part can be a function
+        for row_nr, row in enumerate(ascii_lines): #This whole part can be a function
             split_row = row.split(",")
             if 'M\xc3\xa9thode:' in split_row[0] or 'M\xe9thode:' in split_row[0]:
                 analysis_round = analysis_round + 1
@@ -217,6 +225,13 @@ class FlameAtomicParser(InstrumentResultsFileParser):
     def parse_row(self, row_nr, row,sample_service,analysis_round):
         #Try to restructure parse row suc
         parsed = {}
+        # for indx in range(len(ascii_lines)):
+        #     try:
+        #         ascii_lines[indx][8] = int(ascii_lines[indx][8])
+        #     except (ValueError, TypeError):
+        #         ascii_lines[indx][8] = 1
+
+        import pdb;pdb.set_trace()
         #Here we check whether this sample ID has been processed already
         if {row[0]:sample_service} in self.processed_samples_class:
             msg = ("Multiple results for Sample '{}' with sample service '{}' found. Not imported".format(row[0],sample_service))
@@ -258,6 +273,42 @@ class FlameAtomicParser(InstrumentResultsFileParser):
                 self._addRawResult(row[0], {keyword: parsed})
                 #Avoid repetition
         return 
+
+
+    @staticmethod
+    def ensure_unicode(v):
+        if isinstance(v, str):
+            v = v.decode('utf8')
+        return unicode(v)
+
+    @staticmethod
+    def extract_relevant_data(lines):
+        new_lines = []
+        for row in lines:
+            # import pdb;pdb.set_trace()
+            split_row = row.encode("ascii","ignore").split(",")
+            # if len(split_row) > 13:
+            # new_lines.append(','.join([str(elem) for elem in split_row]))
+            new_lines.append(split_row)
+        return new_lines
+
+
+    @staticmethod
+    def try_utf8(data):
+        """Returns a Unicode object on success, or None on failure"""
+        try:
+            return data.decode('utf-8')
+        except UnicodeDecodeError:
+            return None
+
+
+    @staticmethod
+    def try_utf16(data):
+        """Returns a Unicode object on success, or None on failure"""
+        try:
+            return data.decode('utf-16')
+        except UnicodeDecodeError:
+            return None
 
 
     @staticmethod
@@ -380,11 +431,17 @@ class Export(BrowserView):
     title = "Agilent Flame Atomic Exporter"
     __file__ = abspath(__file__)  # noqa
 
-    def __init__(self, context,request):
+    def __init__(self, context):
         self.context = context
-        self.request = request
+        self.request = None
 
-    def __call__(self, analyses):
+    def Export(self, context, request):
+
+    # def __init__(self, context,request):
+    #     self.context = context
+    #     self.request = request
+
+    # def __call__(self, analyses):
         # import pdb;pdb.set_trace()
         # tray = 1
         now = DateTime().strftime('%Y%m%d-%H%M')
@@ -392,7 +449,7 @@ class Export(BrowserView):
         instrument = self.context.getInstrument()
         norm = getUtility(IIDNormalizer).normalize
         filename = '{}-{}.csv'.format(
-            self.context.getId(), norm(self.title))
+            context.getId(), norm(self.title))
             # self.context.getId(), norm(instrument.getDataInterface()))
         # listname = '{}_{}_{}'.format(
         #     self.context.getId(),  norm(instrument.getDataInterface()))
@@ -423,7 +480,7 @@ class Export(BrowserView):
 
         # write rows, one per PARENT
         # import pdb;pdb.set_trace()
-        layout = self.context.getLayout()
+        layout = context.getLayout()
         # header = [listname, options['method']]
         # rows = []
         # rows.append(header)
@@ -485,12 +542,12 @@ class Export(BrowserView):
 
         rows = self.row_sorter(tmprows)
         result2 = self.list_to_string(rows)
-        setheader = self.request.RESPONSE.setHeader
+        setheader = request.RESPONSE.setHeader
         setheader('Content-Length', len(result2))
         setheader('Content-Disposition', 'inline; filename=%s' % filename)
         setheader('Content-Type', 'text/csv')
         # self.self.request.RESPONSE.write(result2)
-        self.request.RESPONSE.write(result2)
+        request.RESPONSE.write(result2)
     
 
     @staticmethod

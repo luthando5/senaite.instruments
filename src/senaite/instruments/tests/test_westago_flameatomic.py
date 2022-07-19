@@ -225,133 +225,133 @@ class TestFlameAtomic(BaseTestCase):
         self.assertEqual(a_gold_third.getResult(), '')
 
 
-    def test_of_legends(self):
+    # def QC_testing(self):
 
-        import re
-        import transaction
-        from bika.lims import api
-        from bika.lims.utils.analysisrequest import create_analysisrequest
-        from bika.lims.workflow import doActionFor
-        from DateTime import DateTime
-        from plone.app.testing import TEST_USER_ID
-        from plone.app.testing import TEST_USER_PASSWORD
-        from plone.app.testing import setRoles
+    #     import re
+    #     import transaction
+    #     from bika.lims import api
+    #     from bika.lims.utils.analysisrequest import create_analysisrequest
+    #     from bika.lims.workflow import doActionFor
+    #     from DateTime import DateTime
+    #     from plone.app.testing import TEST_USER_ID
+    #     from plone.app.testing import TEST_USER_PASSWORD
+    #     from plone.app.testing import setRoles
 
-    # Variables:
+    # # Variables:
 
-        portal = self.portal
-        request = self.request
-        bika_setup = portal.bika_setup
-        bikasetup = portal.bika_setup
-        bika_analysisservices = bika_setup.bika_analysisservices
-        bika_calculations = bika_setup.bika_calculations
+    #     portal = self.portal
+    #     request = self.request
+    #     bika_setup = portal.bika_setup
+    #     bikasetup = portal.bika_setup
+    #     bika_analysisservices = bika_setup.bika_analysisservices
+    #     bika_calculations = bika_setup.bika_calculations
 
-    # We need to create some basic objects for the test:
+    # # We need to create some basic objects for the test:
 
-        setRoles(portal, TEST_USER_ID, ['LabManager', 'Analyst'])
-        date_now = DateTime().strftime("%Y-%m-%d")
-        date_future = (DateTime() + 5).strftime("%Y-%m-%d")
-        client = api.create(portal.clients, "Client", Name="Happy Hills", ClientID="HH", MemberDiscountApplies=True)
-        contact = api.create(client, "Contact", Firstname="Rita", Lastname="Mohale")
-        sampletype = api.create(bikasetup.bika_sampletypes, "SampleType", title="Water", Prefix="W")
-        labcontact = api.create(bikasetup.bika_labcontacts, "LabContact", Firstname="Lab", Lastname="Manager")
-        department = api.create(bikasetup.bika_departments, "Department", title="Chemistry", Manager=labcontact)
-        category = api.create(bikasetup.bika_analysiscategories, "AnalysisCategory", title="Metals", Department=department)
-        supplier = api.create(bikasetup.bika_suppliers, "Supplier", Name="Naralabs")
+    #     setRoles(portal, TEST_USER_ID, ['LabManager', 'Analyst'])
+    #     date_now = DateTime().strftime("%Y-%m-%d")
+    #     date_future = (DateTime() + 5).strftime("%Y-%m-%d")
+    #     client = api.create(portal.clients, "Client", Name="Happy Hills", ClientID="HH", MemberDiscountApplies=True)
+    #     contact = api.create(client, "Contact", Firstname="Rita", Lastname="Mohale")
+    #     sampletype = api.create(bikasetup.bika_sampletypes, "SampleType", title="Water", Prefix="W")
+    #     labcontact = api.create(bikasetup.bika_labcontacts, "LabContact", Firstname="Lab", Lastname="Manager")
+    #     department = api.create(bikasetup.bika_departments, "Department", title="Chemistry", Manager=labcontact)
+    #     category = api.create(bikasetup.bika_analysiscategories, "AnalysisCategory", title="Metals", Department=department)
+    #     supplier = api.create(bikasetup.bika_suppliers, "Supplier", Name="Naralabs")
 
-        interim_calc = api.create(bika_calculations, 'Calculation', title='Test-Total-Dust')
-        result = {'keyword': 'result', 'title': 'Results', 'value': 12.3, 'type': 'int', 'hidden': False, 'unit': ''}
-        factor = {'keyword': 'factor', 'title': 'Factor', 'value': 14.89, 'type': 'int', 'hidden': False, 'unit': ''}
-        interims = [result, factor]
-        interim_calc.setInterimFields(interims)
-        self.assertEqual(interim_calc.getInterimFields(), interims)
-        interim_calc.setFormula('[reading] * [factor]')
-        total_Dust = api.create(bika_analysisservices, 'AnalysisService', title='Gold', Keyword="Au")
-        total_Dust.setUseDefaultCalculation(False)
-        total_Dust.setCalculation(interim_calc)
-        total_Dust.setInterimFields(interims)
-        service_uids = [total_Dust.UID()]
+    #     interim_calc = api.create(bika_calculations, 'Calculation', title='Test-Total-Dust')
+    #     result = {'keyword': 'result', 'title': 'Results', 'value': 12.3, 'type': 'int', 'hidden': False, 'unit': ''}
+    #     factor = {'keyword': 'factor', 'title': 'Factor', 'value': 14.89, 'type': 'int', 'hidden': False, 'unit': ''}
+    #     interims = [result, factor]
+    #     interim_calc.setInterimFields(interims)
+    #     self.assertEqual(interim_calc.getInterimFields(), interims)
+    #     interim_calc.setFormula('[reading] * [factor]')
+    #     total_Dust = api.create(bika_analysisservices, 'AnalysisService', title='Gold', Keyword="Au")
+    #     total_Dust.setUseDefaultCalculation(False)
+    #     total_Dust.setCalculation(interim_calc)
+    #     total_Dust.setInterimFields(interims)
+    #     service_uids = [total_Dust.UID()]
 
-    # Create a Reference Definition for blank:
+    # # Create a Reference Definition for blank:
 
-        blankdef = api.create(bikasetup.bika_referencedefinitions, "ReferenceDefinition", title="Blank definition", Blank=True)
-        blank_refs = [{'uid': total_Dust.UID(), 'result': '0', 'min': '0', 'max': '0'},]
-        blankdef.setReferenceResults(blank_refs)
+    #     blankdef = api.create(bikasetup.bika_referencedefinitions, "ReferenceDefinition", title="Blank definition", Blank=True)
+    #     blank_refs = [{'uid': total_Dust.UID(), 'result': '0', 'min': '0', 'max': '0'},]
+    #     blankdef.setReferenceResults(blank_refs)
 
-    # And for control:
+    # # And for control:
 
-        controldef = api.create(bikasetup.bika_referencedefinitions, "ReferenceDefinition", title="Control definition")
-        control_refs = [{'uid': total_Dust.UID(), 'result': '10', 'min': '9.99', 'max': '10.01'},]
-        controldef.setReferenceResults(control_refs)
+    #     controldef = api.create(bikasetup.bika_referencedefinitions, "ReferenceDefinition", title="Control definition")
+    #     control_refs = [{'uid': total_Dust.UID(), 'result': '10', 'min': '9.99', 'max': '10.01'},]
+    #     controldef.setReferenceResults(control_refs)
 
-        blank = api.create(supplier, "ReferenceSample", title="Blank",
-                            ReferenceDefinition=blankdef,
-                            Blank=True, ExpiryDate=date_future,
-                            ReferenceResults=blank_refs)
-        control = api.create(supplier, "ReferenceSample", title="Control",
-                              ReferenceDefinition=controldef,
-                              Blank=False, ExpiryDate=date_future,
-                              ReferenceResults=control_refs)
-
-
-    # Create an Analysis Request:
-
-        sampletype_uid = api.get_uid(sampletype)
-        values = {
-             'Client': api.get_uid(client),
-             'Contact': api.get_uid(contact),
-             'DateSampled': date_now,
-             'SampleType': sampletype_uid,
-             'Priority': '1',
-         }
-
-        ar = create_analysisrequest(client, request, values, service_uids)
-
-        success = doActionFor(ar, 'receive')
+    #     blank = api.create(supplier, "ReferenceSample", title="Blank",
+    #                         ReferenceDefinition=blankdef,
+    #                         Blank=True, ExpiryDate=date_future,
+    #                         ReferenceResults=blank_refs)
+    #     control = api.create(supplier, "ReferenceSample", title="Control",
+    #                           ReferenceDefinition=controldef,
+    #                           Blank=False, ExpiryDate=date_future,
+    #                           ReferenceResults=control_refs)
 
 
-        worksheet = api.create(portal.worksheets, "Worksheet", Analyst='test_user_1_')
-        analyses = map(api.get_object, ar.getAnalyses())
-        analysis = analyses[0]
-        worksheet.addAnalysis(analysis)
-        analysis.getWorksheet().UID() == worksheet.UID()
+    # # Create an Analysis Request:
 
-        data = open(fn_QC_and_blank, 'r').read()
+    #     sampletype_uid = api.get_uid(sampletype)
+    #     values = {
+    #          'Client': api.get_uid(client),
+    #          'Contact': api.get_uid(contact),
+    #          'DateSampled': date_now,
+    #          'SampleType': sampletype_uid,
+    #          'Priority': '1',
+    #      }
 
-        import_file = FileUpload(TestFile(cStringIO.StringIO(data), fn_QC_and_blank))
+    #     ar = create_analysisrequest(client, request, values, service_uids)
 
-    # Add a blank and a control:
-        blanks = worksheet.addReferenceAnalyses(blank, service_uids)
-        blanks2 = worksheet.addReferenceAnalyses(blank, service_uids)
-        blanks3 = worksheet.addReferenceAnalyses(blank, service_uids)
-        transaction.commit()
-        blanks.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
-        blanks2.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
-        blanks3.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
-        controls = worksheet.addReferenceAnalyses(control, service_uids)
-        controls2 = worksheet.addReferenceAnalyses(control, service_uids)
-        controls3 = worksheet.addReferenceAnalyses(control, service_uids)
-        transaction.commit()
-        controls.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
-        controls2.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
-        controls3.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
-        transaction.commit()
+    #     success = doActionFor(ar, 'receive')
 
-        request = TestRequest(form=dict(
-            submitted=True,
-            artoapply='received_tobeverified',
-            results_override='override',
-            instrument_results_file=import_file,
-            instrument=api.get_uid(self.instrument)))
+
+    #     worksheet = api.create(portal.worksheets, "Worksheet", Analyst='test_user_1_')
+    #     analyses = map(api.get_object, ar.getAnalyses())
+    #     analysis = analyses[0]
+    #     worksheet.addAnalysis(analysis)
+    #     analysis.getWorksheet().UID() == worksheet.UID()
+
+    #     data = open(fn_QC_and_blank, 'r').read()
+
+    #     import_file = FileUpload(TestFile(cStringIO.StringIO(data), fn_QC_and_blank))
+
+    # # Add a blank and a control:
+    #     blanks = worksheet.addReferenceAnalyses(blank, service_uids)
+    #     blanks2 = worksheet.addReferenceAnalyses(blank, service_uids)
+    #     blanks3 = worksheet.addReferenceAnalyses(blank, service_uids)
+    #     transaction.commit()
+    #     blanks.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+    #     blanks2.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+    #     blanks3.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+    #     controls = worksheet.addReferenceAnalyses(control, service_uids)
+    #     controls2 = worksheet.addReferenceAnalyses(control, service_uids)
+    #     controls3 = worksheet.addReferenceAnalyses(control, service_uids)
+    #     transaction.commit()
+    #     controls.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+    #     controls2.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+    #     controls3.sort(key=lambda analysis: analysis.getKeyword(), reverse=False)
+    #     transaction.commit()
+
+    #     request = TestRequest(form=dict(
+    #         submitted=True,
+    #         artoapply='received_tobeverified',
+    #         results_override='override',
+    #         instrument_results_file=import_file,
+    #         instrument=api.get_uid(self.instrument)))
             
-        results = flameatomicimport.Import(self.portal, request)
-        # import pdb;pdb.set_trace()
-        for analysis in worksheet.getAnalyses():
-             if analysis.portal_type == 'ReferenceAnalysis':
-                 if analysis.getReferenceType() == 'b' or analysis.getReferenceType() == 'c':
-                     # 3 is the number of interim fields on the analysis/calculation
-                     if len(analysis.getInterimFields()) != 3:
-                         self.fail("Blank or Control Analyses interim field are not correct")
+    #     results = flameatomicimport.Import(self.portal, request)
+    #     # import pdb;pdb.set_trace()
+    #     for analysis in worksheet.getAnalyses():
+    #          if analysis.portal_type == 'ReferenceAnalysis':
+    #              if analysis.getReferenceType() == 'b' or analysis.getReferenceType() == 'c':
+    #                  # 3 is the number of interim fields on the analysis/calculation
+    #                  if len(analysis.getInterimFields()) != 3:
+    #                      self.fail("Blank or Control Analyses interim field are not correct")
 
 
 def test_suite():
