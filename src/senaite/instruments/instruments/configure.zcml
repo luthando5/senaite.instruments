@@ -18,7 +18,7 @@
    <adapter
     for="*"
     name="flameatomic_exporter"
-    factory=".agilent.flameatomic.flameatomic.Export"
+    factory=".agilent.flameatomic.flameatomic.flameatomicexport"
     provides="senaite.core.exportimport.instruments.IInstrumentExportInterface"/>
     
     <adapter
