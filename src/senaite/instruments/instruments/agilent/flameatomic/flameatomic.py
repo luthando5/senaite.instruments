@@ -269,7 +269,7 @@ class FlameAtomicParser(InstrumentResultsFileParser):
                 else:
                     lines_with_parentheses = data.decode('utf-16').split("\n")
             else:
-                if "\r\n" in decoded_data:
+                if "\r\n" in data:
                     lines_with_parentheses = re.sub(r'[^\x00-\x7f]',r'', data).split("\r\n")
                 else:
                     lines_with_parentheses = re.sub(r'[^\x00-\x7f]',r'', data).split("\n")
@@ -486,7 +486,7 @@ class MyExport(BrowserView):
         instrument = self.context.getInstrument()
         norm = getUtility(IIDNormalizer).normalize
         filename = '{}-{}.csv'.format(
-            self.context.getId(), norm(instrument.getDataInterface()))
+            self.context.getId(), instrument.Title())
 
         options = {
             'dilute_factor': 1,
@@ -532,7 +532,6 @@ class MyExport(BrowserView):
                                 options["notneeded2"],
                                 options["notneeded3"]])
                 Used_IDs.append(analysis_id)
-
         rows = self.row_sorter(tmprows)
         result = self.dict_to_string(rows)
         setheader = self.request.RESPONSE.setHeader
@@ -556,14 +555,8 @@ class MyExport(BrowserView):
     
     @staticmethod
     def row_sorter(rows):
-        sample_cases = {'SAMP': 2,'BLANK':0,'CRM':1,'DUP':3}
-        reversed_dict = {v: k for k, v in sample_cases.items()}
-        for row in rows:
-            row[2] = sample_cases[row[2]]
-        rows.sort(lambda a, b: cmp(a[2], b[2]))
         for indx,row in enumerate(rows):
             row[0] = indx+1
-            row[2] = reversed_dict[row[2]]
         return rows
 
 
