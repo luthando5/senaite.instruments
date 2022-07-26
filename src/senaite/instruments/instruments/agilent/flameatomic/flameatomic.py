@@ -85,11 +85,6 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         convenience of the CSV library
         """
 
-        def find_sheet(wb, worksheet):
-            for sheet in wb.sheets():
-                if sheet.name == worksheet:
-                    return sheet
-
         wb = open_workbook(file_contents=infile.read())
         sheet = wb.sheets()[worksheet]
 
@@ -176,7 +171,7 @@ class FlameAtomicParser(InstrumentResultsFileParser):
 
         data = self.csv_data.read()
         lines = self.data_cleaning(data,ext)
-
+        
         analysis_round = 0
         sample_service, lines = self.parse_headerlines(lines)
 
@@ -190,8 +185,6 @@ class FlameAtomicParser(InstrumentResultsFileParser):
 
 
     def parse_row(self, row,sample_service,analysis_round,row_nr):
-        parsed = {}
-
         try:
             row[8] = float(row[8])
         except (TypeError,ValueError):
@@ -203,7 +196,7 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         factor = row[8]
 
         if not sample_ID or not reading:
-            self.warn("Data not entered correctly for '{}' with sample ID '{}' and result of '{}'".format(sample_service,sample_ID,row.get("Result")))
+            self.warn("Data not entered correctly for '{}' with sample ID '{}' and result of '{}'".format(sample_service,sample_ID,reading))
             return 0
 
         #Here we check whether this sample ID has been processed already
@@ -266,8 +259,10 @@ class FlameAtomicParser(InstrumentResultsFileParser):
             if decoded_data:
                 if "\r\n" in decoded_data:
                     lines_with_parentheses = data.decode('utf-16').split("\r\n")
-                else:
+                elif "\n" in decoded_data:
                     lines_with_parentheses = data.decode('utf-16').split("\n")
+                else:
+                    lines_with_parentheses = re.sub(r'[^\x00-\x7f]',r'', data).split("\r\n") #if bad conversion
             else:
                 if "\r\n" in data:
                     lines_with_parentheses = re.sub(r'[^\x00-\x7f]',r'', data).split("\r\n")
@@ -333,12 +328,10 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         analyses = self.get_analyses(ar)
         analyses = [v for k, v in analyses.items() if k.startswith(kw)]
         if len(analyses) < 1:
-            self.log('No analysis found matching keyword "${kw}"', mapping=dict(kw=kw))
+            self.log(' No analysis found matching keyword {}'.format(kw))
             return None
         if len(analyses) > 1:
-            self.warn(
-                'Multiple analyses found matching Keyword "${kw}"', mapping=dict(kw=kw)
-            )
+            self.warn('Multiple analyses found matching Keyword {}'.format(kw))
             return None
         return analyses[0]
 
@@ -369,7 +362,7 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         analyses = dict((a.getKeyword, a) for a in brains)
         brains = [v for k, v in analyses.items() if k.startswith(sample_service)]
         if len(brains) < 1:
-            msg = ("No analysis found matching Keyword {}".format(sample_service))
+            msg = (" No analysis found matching Keyword {}".format(sample_service))
             raise AnalysisNotFound(msg)
         if len(brains) > 1:
             msg = ("Multiple brains found matching Keyword {}".format(sample_service))
@@ -384,10 +377,10 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         )
         brains = api.search(query, SENAITE_CATALOG)
         if len(brains) < 1:
-            msg = ("No reference sample found matching Keyword '${kw}'",)
-            raise AnalysisNotFound(msg, kw=kw)
+            msg = ("No reference sample found matching Keyword {}".format(kw))
+            raise AnalysisNotFound(msg)
         if len(brains) > 1:
-            msg = ("Multiple brains found matching Keyword '{kw}'".format(kw))
+            msg = ("Multiple brains found matching Keyword {}".format(kw))
             raise MultipleAnalysesFound(msg)
         return brains[0]
 
@@ -403,10 +396,10 @@ class FlameAtomicParser(InstrumentResultsFileParser):
         brains = self.get_reference_sample_analyses(reference_sample)
         brains = [v for k, v in brains.items() if k.startswith(kw)]
         if len(brains) < 1:
-            msg = "No analysis found matching Keyword '${kw}'",
-            raise AnalysisNotFound(msg, kw=kw)
+            msg = " No analysis found matching Keyword {}".format(kw)
+            raise AnalysisNotFound(msg)
         if len(brains) > 1:
-            msg = ("Multiple brains found matching Keyword '{}'".format(kw))
+            msg = ("Multiple brains found matching Keyword {}".format(kw))
             raise MultipleAnalysesFound(msg)
         return brains[0]
     
