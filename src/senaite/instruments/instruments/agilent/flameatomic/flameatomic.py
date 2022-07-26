@@ -500,11 +500,9 @@ class MyExport(BrowserView):
 
         layout = self.context.getLayout()
         tmprows = []
-        Used_IDs = []
-        test_list = []
+        sample_dict = {}
 
-
-        for item in layout:
+        for indx,item in enumerate(layout):
             c_uid = item['container_uid']
             a_uid = item['analysis_uid']
             analysis = uc(UID=a_uid)[0].getObject() if a_uid else None
@@ -516,24 +514,39 @@ class MyExport(BrowserView):
                 analysis_id = container.id
             elif (item['type'] in 'bcd'):
                 analysis_id = analysis.getReferenceAnalysesGroupID()
-            test_list.append([[analysis_id,sample_type,keyword]])
+            weight = 0
             if keyword == "PeseePourFusion":
-                if analysis_id in Used_IDs:
-                    continue
                 weight = analysis.getResult()
-                if not weight:
-                    weight = 50
-                tmprows.append(['',
-                                analysis_id,
-                                sample_type,
-                                weight,
-                                options['dilute_factor'],
-                                options["notneeded1"],
-                                options["notneeded2"],
-                                options["notneeded3"]])
-                Used_IDs.append(analysis_id)
-        rows = self.row_sorter(tmprows)
-        result = self.dict_to_string(rows)
+            if not weight:
+                weight = 0
+            tmprows.append([indx+1,
+                            analysis_id,
+                            sample_type,
+                            weight,
+                            options['dilute_factor'],
+                            options["notneeded1"],
+                            options["notneeded2"],
+                            options["notneeded3"]])
+        
+        for row in tmprows:
+            if sample_dict.get(row[1]):
+                sample_dict[row[1]].append(row)
+            else:
+                sample_dict[row[1]] = [row]
+
+        unsorted_rows = []
+        for rows in sample_dict.values():
+            max_weight = -1
+            for items in rows:
+                if items[3] > max_weight:
+                    max_weight = items[3]
+            rows[0][3] = max_weight
+            unsorted_rows.append(rows[0])
+            
+        unsorted_rows.sort(lambda a, b: cmp(a[0], b[0]))
+        final_rows = self.row_sorter(unsorted_rows)
+        result = self.dict_to_string(final_rows)
+
         setheader = self.request.RESPONSE.setHeader
         setheader('Content-Length', len(result))
         setheader('Content-Disposition', 'inline; filename=%s' % filename)
