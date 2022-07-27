@@ -27,6 +27,12 @@
     factory=".hach.dr3900.dr3900.dr3900import"
     provides="senaite.core.exportimport.instruments.IInstrumentImportInterface"/>
 
+    <adapter
+    for="*"
+    name="dr3900_exporter"
+    factory=".hach.dr3900.dr3900.dr3900export"
+    provides="senaite.core.exportimport.instruments.IInstrumentExportInterface"/>
+
 <!-- Incomplete ...
    <adapter
     for="*"

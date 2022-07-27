@@ -23,10 +23,13 @@ import traceback
 from mimetypes import guess_type
 from os.path import abspath
 from os.path import splitext
+from DateTime import DateTime
+from bika.lims.browser import BrowserView
 
 from senaite.core.exportimport.instruments import (
     IInstrumentAutoImportInterface, IInstrumentImportInterface
 )
+from senaite.core.exportimport.instruments import IInstrumentExportInterface
 from senaite.core.exportimport.instruments.resultsimport import (
     AnalysisResultsImporter)
 from senaite.core.exportimport.instruments.resultsimport import (
@@ -37,7 +40,7 @@ from senaite.instruments.instrument import xlsx_to_csv
 from bika.lims import api
 from bika.lims import bikaMessageFactory as _
 from bika.lims.catalog import CATALOG_ANALYSIS_REQUEST_LISTING
-from senaite.core.catalog import ANALYSIS_CATALOG
+from senaite.core.catalog import ANALYSIS_CATALOG, SENAITE_CATALOG
 from senaite.instruments.instrument import FileStub
 from senaite.instruments.instrument import SheetNotFound
 from zope.interface import implements
@@ -164,6 +167,23 @@ class DR3900Parser(InstrumentResultsFileParser):
 
 
     @staticmethod
+    def is_sample(sample_id):
+        query = dict(portal_type="AnalysisRequest", getId=sample_id)
+        brains = api.search(query, CATALOG_ANALYSIS_REQUEST_LISTING)
+        return True if brains else False
+
+
+    @staticmethod
+    def is_analysis_group_id(analysis_group_id):
+        portal_types = ["DuplicateAnalysis", "ReferenceAnalysis"]
+        query = dict(
+            portal_type=portal_types, getReferenceAnalysesGroupID=analysis_group_id
+        )
+        brains = api.search(query, ANALYSIS_CATALOG)
+        return True if brains else False
+
+
+    @staticmethod
     def get_ar(sample_id):
         query = dict(portal_type="AnalysisRequest", getId=sample_id)
         brains = api.search(query, CATALOG_ANALYSIS_REQUEST_LISTING)
@@ -171,12 +191,6 @@ class DR3900Parser(InstrumentResultsFileParser):
             return api.get_object(brains[0])
         except IndexError:
             pass
-    
-    @staticmethod
-    def is_sample(sample_id):
-        query = dict(portal_type="AnalysisRequest", getId=sample_id)
-        brains = api.search(query, CATALOG_ANALYSIS_REQUEST_LISTING)
-        return True if brains else False
 
 
     @staticmethod
@@ -189,44 +203,64 @@ class DR3900Parser(InstrumentResultsFileParser):
         analyses = dict((a.getKeyword, a) for a in brains)
         brains = [v for k, v in analyses.items() if k.startswith(sample_service)]
         if len(brains) < 1:
-            msg = ("No analysis found matching Keyword {}".format(sample_service))
+            msg = (" No analysis found matching Keyword {}".format(sample_service))
             raise AnalysisNotFound(msg)
         if len(brains) > 1:
             msg = ("Multiple brains found matching Keyword {}".format(sample_service))
             raise MultipleAnalysesFound(msg)
         return brains[0]
 
+
     @staticmethod
-    def is_analysis_group_id(analysis_group_id):
-        portal_types = ["DuplicateAnalysis", "ReferenceAnalysis"]
+    def get_reference_sample(reference_sample_id, kw):
         query = dict(
-            portal_type=portal_types, getReferenceAnalysesGroupID=analysis_group_id
+            portal_type="ReferenceSample", getId=reference_sample_id
         )
-        brains = api.search(query, ANALYSIS_CATALOG)
-        return True if brains else False
+        brains = api.search(query, SENAITE_CATALOG)
+        if len(brains) < 1:
+            msg = ("No reference sample found matching Keyword {}".format(kw))
+            raise AnalysisNotFound(msg)
+        if len(brains) > 1:
+            msg = ("Multiple brains found matching Keyword {}".format(kw))
+            raise MultipleAnalysesFound(msg)
+        return brains[0]
+
+
+    def get_reference_sample_analysis(self, reference_sample, kw):
+        kw = kw
+        brains = self.get_reference_sample_analyses(reference_sample)
+        brains = [v for k, v in brains.items() if k.startswith(kw)]
+        if len(brains) < 1:
+            msg = " No analysis found matching Keyword {}".format(kw)
+            raise AnalysisNotFound(msg)
+        if len(brains) > 1:
+            msg = ("Multiple brains found matching Keyword {}".format(kw))
+            raise MultipleAnalysesFound(msg)
+        return brains[0]
+
 
     @staticmethod
     def get_reference_sample_analyses(reference_sample):
         brains = reference_sample.getObject().getReferenceAnalyses()
         return dict((a.getKeyword(), a) for a in brains)
 
-    @staticmethod
-    def get_analyses(ar):
-        analyses = ar.getAnalyses()
-        return dict((a.getKeyword, a) for a in analyses)
 
     def get_analysis(self, ar, kw):
         analyses = self.get_analyses(ar)
         analyses = [v for k, v in analyses.items() if k.startswith(kw)]
         if len(analyses) < 1:
-            self.log('No analysis found matching keyword "${kw}"', mapping=dict(kw=kw))
+            self.log(' No analysis found matching keyword {}'.format(kw))
             return None
         if len(analyses) > 1:
-            self.warn(
-                'Multiple analyses found matching Keyword "${kw}"', mapping=dict(kw=kw)
-            )
+            self.warn('Multiple analyses found matching Keyword {}'.format(kw))
             return None
         return analyses[0]
+
+
+    @staticmethod
+    def get_analyses(ar):
+        analyses = ar.getAnalyses()
+        return dict((a.getKeyword, a) for a in analyses)
 
 
     @staticmethod
@@ -340,3 +374,89 @@ class dr3900import(object):
         results = {"errors": errors, "log": logs, "warns": warns}
 
         return json.dumps(results)
+
+
+class MyExport(BrowserView):
+
+    def __innit__(self,context,request):
+        self.context = context
+        self.request = request
+    
+
+    def __call__(self,analyses):
+        uc = api.get_tool('uid_catalog')
+        instrument = self.context.getInstrument()
+        filename = '{}-{}.csv'.format(
+            self.context.getId(), instrument.Title())
+        now = DateTime().strftime('%m/%d/%Y')
+
+        layout = self.context.getLayout()
+        tmprows = []
+        parsed_analyses = {}
+        headers = ["#Sample Number","#ID","#Date","#LIMS ID"]
+        tmprows.append(headers)
+        rows = []
+
+        for indx,item in enumerate(layout):
+            c_uid = item['container_uid']
+            a_uid = item['analysis_uid']
+            analysis = uc(UID=a_uid)[0].getObject() if a_uid else None
+            container = uc(UID=c_uid)[0].getObject() if c_uid else None
+
+            if item['type'] == 'a':
+                analysis_id = container.id
+            elif (item['type'] in 'bcd'):
+                analysis_id = analysis.getReferenceAnalysesGroupID()
+            if parsed_analyses.get(analysis_id):
+                continue
+            else:
+                tmprows.append([indx+1,
+                                analysis_id,
+                                now,
+                                ''])
+                parsed_analyses[analysis_id] = 10
+
+        import pdb;pdb.set_trace()
+        rows = self.row_sorter(tmprows)
+        result = self.dict_to_string(rows)
+
+        setheader = self.request.RESPONSE.setHeader
+        setheader('Content-Length', len(result))
+        setheader('Content-Disposition', 'inline; filename=%s' % filename)
+        setheader('Content-Type', 'text/csv')
+        self.request.RESPONSE.write(result)
+    
+
+    @staticmethod
+    def dict_to_string(rows):
+        final_rows = ''
+        interim_rows = []
+        
+        for row in rows:
+            row = ','.join(str(item) for item in row)
+            interim_rows.append(row)
+        final_rows = '\r\n'.join(interim_rows)
+        return final_rows
+
+    
+    @staticmethod
+    def row_sorter(rows):
+        for indx,row in enumerate(rows):
+            if indx!= 0:
+                row[0] = indx
+        return rows
+
+
+class dr3900export(object):
+    implements(IInstrumentExportInterface)
+    title = "Hach DR3900 Exporter"
+    __file__ = abspath(__file__)  # noqa
+
+
+    def __init__(self, context,request=None):
+        self.context = context
+        self.request = request
+
+
+    def Export(self, context, request):
+        return MyExport(context,request)
