@@ -416,7 +416,6 @@ class MyExport(BrowserView):
                                 ''])
                 parsed_analyses[analysis_id] = 10
 
-        import pdb;pdb.set_trace()
         rows = self.row_sorter(tmprows)
         result = self.dict_to_string(rows)
 
