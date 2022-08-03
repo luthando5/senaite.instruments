@@ -17,6 +17,7 @@
 #
 # Copyright 2018-2019 by it's authors.
 # Some rights reserved, see README and LICENSE.
+import re
 import csv
 import json
 import traceback
@@ -133,7 +134,8 @@ class DR3900Parser(InstrumentResultsFileParser):
         parsed_strings = self.interim_map_sorter(row)
         parsed = self.data_cleaning(parsed_strings)
         sample_ID = row.get("Sample ID:")
-        sample_service = row.get("Parameter:").replace(" ","")
+        regex = re.compile('[^a-zA-Z]')
+        sample_service = regex.sub('',row.get("Parameter:"))
 
         if not sample_service or not sample_ID or not row.get("Result").strip(" "):
             self.warn("Data not entered correctly for '{}' with sample ID '{}' and result of '{}'".format(sample_service,sample_ID,row.get("Result")))
