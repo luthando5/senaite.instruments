@@ -112,9 +112,24 @@ class DR3900Parser(InstrumentResultsFileParser):
 
         decoded_data = self.try_utf8(data)
         if decoded_data:
-            lines_with_parentheses = decoded_data.split("\n")
+            if ext == ".xlsx":
+                lines_with_parentheses = decoded_data.split("\n")
+            else:
+                lines_with_parentheses = decoded_data.split("\r\n")
         else:
-            lines_with_parentheses = data.decode('utf-16').split("\r\n")
+            decoded_data = self.try_utf16(data)
+            if decoded_data:
+                if "\r\n" in decoded_data:
+                    lines_with_parentheses = data.decode('utf-16').split("\r\n")
+                elif "\n" in decoded_data:
+                    lines_with_parentheses = data.decode('utf-16').split("\n")
+                else:
+                    lines_with_parentheses = re.sub(r'[^\x00-\x7f]',r'', data).split("\r\n") #if bad conversion
+            else:
+                if "\r\n" in data:
+                    lines_with_parentheses = re.sub(r'[^\x00-\x7f]',r'', data).split("\r\n")
+                else:
+                    lines_with_parentheses = re.sub(r'[^\x00-\x7f]',r'', data).split("\n")
         lines = [i.replace('"','') for i in lines_with_parentheses]
         
         ascii_lines = self.extract_relevant_data(lines)
@@ -280,6 +295,14 @@ class DR3900Parser(InstrumentResultsFileParser):
         """Returns a Unicode object on success, or None on failure"""
         try:
             return data.decode('utf-8')
+        except UnicodeDecodeError:
+            return None
+    
+    @staticmethod
+    def try_utf16(data):
+        """Returns a Unicode object on success, or None on failure"""
+        try:
+            return data.decode('utf-16')
         except UnicodeDecodeError:
             return None
 
