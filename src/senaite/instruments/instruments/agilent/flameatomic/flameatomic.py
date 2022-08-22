@@ -478,7 +478,7 @@ class MyExport(BrowserView):
         uc = api.get_tool('uid_catalog')
         instrument = self.context.getInstrument()
         norm = getUtility(IIDNormalizer).normalize
-        filename = '{}-{}.csv'.format(
+        filename = '{}-{}.lbl'.format(
             self.context.getId(), instrument.Title())
 
         options = {
@@ -543,7 +543,7 @@ class MyExport(BrowserView):
         setheader = self.request.RESPONSE.setHeader
         setheader('Content-Length', len(result))
         setheader('Content-Disposition', 'inline; filename=%s' % filename)
-        setheader('Content-Type', 'text/csv')
+        setheader('Content-Type', 'text/lbl')
         self.request.RESPONSE.write(result)
     
 
