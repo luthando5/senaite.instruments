@@ -542,7 +542,7 @@ class MyExport(BrowserView):
 
         setheader = self.request.RESPONSE.setHeader
         setheader('Content-Length', len(result))
-        setheader('Content-Disposition', 'inline; filename=%s' % filename)
+        setheader('Content-Disposition', 'attachment; filename=%s' % filename)
         setheader('Content-Type', 'text/lbl')
         self.request.RESPONSE.write(result)
     
