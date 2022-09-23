@@ -182,7 +182,7 @@ class Nexion350xParser(InstrumentResultsFileParser):
         )
         brains = api.search(query, ANALYSIS_CATALOG)
         analyses = dict((a.getKeyword, a) for a in brains)
-        brains = [v for k, v in analyses.items() if k.startswith(kw)]
+        brains = [v for k, v in analyses.items() if k.startswith(kw[:2])]
         if len(brains) < 1:
             msg = ("No analysis found matching Keyword '${kw}'",)
             raise AnalysisNotFound(msg, kw=kw)
@@ -194,7 +194,7 @@ class Nexion350xParser(InstrumentResultsFileParser):
     def get_reference_sample_analysis(self, reference_sample, kw):
         kw = kw
         brains = self.get_reference_sample_analyses(reference_sample)
-        brains = [v for k, v in brains.items() if k.startswith(kw)]
+        brains = [v for k, v in brains.items() if k.startswith(kw[:2])]
         if len(brains) < 1:
             msg = "No analysis found matching Keyword '${kw}'",
             raise AnalysisNotFound(msg, kw=kw)
@@ -212,7 +212,7 @@ class Nexion350xParser(InstrumentResultsFileParser):
     def get_analysis(self, ar, kw, row_nr="", row=""):
         kw = kw
         items = self.get_analyses(ar)
-        brains = [v for k, v in items.items() if k.startswith(kw)]
+        brains = [v for k, v in items.items() if k.startswith(kw[:2])]
         if len(brains) < 1:
             return None
         if len(brains) > 1:

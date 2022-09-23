@@ -104,8 +104,8 @@ class Winlab32(InstrumentResultsFileParser):
         # convert row to use interim field names
         try:
             value = float(row['Conc (Samp)'])
-        except (TypeError, ValueError):
-            value = row['Conc (Samp)']
+        except (TypeError, ValueError, KeyError):
+            value = row.get('Conc (Samp)')
         # reading and Reading - found out users can have Reading or reading
         # when entering interim fields so we cater for both cases
         parsed = {'Reading': value, 'DefaultResult': 'Reading', 'reading': value}
@@ -160,7 +160,7 @@ class Winlab32(InstrumentResultsFileParser):
     def get_analysis(self, ar, kw):
         kw = kw
         brains = self.get_analyses(ar)
-        brains = [v for k, v in brains.items() if k.startswith(kw)]
+        brains = [v for k, v in brains.items() if k.startswith(kw[:2])]
         if len(brains) < 1:
             msg = "No analysis found matching Keyword '${kw}'",
             raise AnalysisNotFound(msg, kw=kw)
@@ -177,7 +177,7 @@ class Winlab32(InstrumentResultsFileParser):
     def get_reference_sample_analysis(self, reference_sample, kw):
         kw = kw
         brains = self.get_reference_sample_analyses(reference_sample)
-        brains = [v for k, v in brains.items() if k.startswith(kw)]
+        brains = [v for k, v in brains.items() if k.startswith(kw[:2])]
         if len(brains) < 1:
             msg = "No analysis found matching Keyword '${kw}'",
             raise AnalysisNotFound(msg, kw=kw)
@@ -209,7 +209,7 @@ class Winlab32(InstrumentResultsFileParser):
         )
         brains = api.search(query, ANALYSIS_CATALOG)
         analyses = dict((a.getKeyword, a) for a in brains)
-        brains = [v for k, v in analyses.items() if k.startswith(kw)]
+        brains = [v for k, v in analyses.items() if k.startswith(kw[:2])]
         if len(brains) < 1:
             msg = ("No analysis found matching Keyword '${kw}'",)
             raise AnalysisNotFound(msg, kw=kw)
@@ -225,7 +225,7 @@ class Winlab32(InstrumentResultsFileParser):
         analyses = dict((a.getKeyword, [a, a.getReferenceAnalysesGroupID]) for a in duplicates)
         brains = []
         for k, v in analyses.items():
-            if k.startswith(kw) and v[1].startswith(analysis_id):
+            if k.startswith(kw[:2]) and v[1].startswith(analysis_id):
                 brains.append(v[0])
         if len(brains) < 1:
             msg = ("No analysis found matching Keyword '${kw}'",)

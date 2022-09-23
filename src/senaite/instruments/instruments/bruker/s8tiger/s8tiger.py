@@ -330,7 +330,7 @@ class S8TigerParser(InstrumentResultsFileParser):
         )
         brains = api.search(query, ANALYSIS_CATALOG)
         analyses = dict((a.getKeyword, a) for a in brains)
-        brains = [v for k, v in analyses.items() if k.startswith(kw)]
+        brains = [v for k, v in analyses.items() if k.startswith(kw[:2])]
         if len(brains) < 1:
             msg = ("No analysis found matching Keyword '${kw}'",)
             raise AnalysisNotFound(msg, kw=kw)
@@ -361,7 +361,7 @@ class S8TigerParser(InstrumentResultsFileParser):
 
     def get_analysis(self, ar, kw):
         analyses = self.get_analyses(ar)
-        analyses = [v for k, v in analyses.items() if k.startswith(kw)]
+        analyses = [v for k, v in analyses.items() if k.startswith(kw[:2])]
         if len(analyses) < 1:
             self.log('No analysis found matching keyword "${kw}"', mapping=dict(kw=kw))
             return None
